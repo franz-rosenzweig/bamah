@@ -438,3 +438,17 @@ body.in-scene main { max-width: none; padding: 0; display: flex; min-height: 0; 
   .speakers .chip { height: 40px; }
 }
 .stage-title .t2 { display: none; }
+
+/* The tour */
+.tour { position: fixed; inset: 0; z-index: 45; pointer-events: none; }
+.tour.under { visibility: hidden; }
+.tour.center { background: var(--veil); pointer-events: auto; }
+.tour-spot { position: fixed; border-radius: 14px; border: 2px solid var(--accent); box-shadow: 0 0 0 200vmax rgba(8, 5, 5, .5);
+  transition: left .2s ease, top .2s ease, width .2s ease, height .2s ease; display: none; }
+:root[data-theme="light"] .tour-spot { box-shadow: 0 0 0 200vmax rgba(40, 26, 20, .28); }
+.tour-card { position: fixed; pointer-events: auto; background: var(--card); border: 1px solid var(--line-2); border-radius: 18px; padding: 16px 16px 12px;
+  box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 6px; transition: left .2s ease, top .2s ease; }
+.tour-n { font-size: 12px; font-weight: 600; color: var(--accent); }
+.tour-t { font: 600 16px/1.3 var(--ui); }
+.tour-x { font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.tour-b { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }

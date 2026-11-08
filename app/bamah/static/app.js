@@ -80,6 +80,9 @@ function h(tag, props, ...kids) {
   return el;
 }
 
+// Name an element for the tour to point at.
+const mark = (el, name) => { el.setAttribute('data-tour', name); return el; };
+
 // append, skipping empty slots (Element.append would print them as "null")
 const add = (el, ...kids) => { el.append(...kids.flat().filter((k) => k != null && k !== false)); return el; };
 
@@ -97,6 +100,17 @@ const GET = (u) => api('GET', u), POST = (u, b) => api('POST', u, b || {}), PATC
 function debounce(fn, ms = 600) {
   let t;
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+// Save a few fields a moment after typing stops, all together, so a quick edit to one box
+// doesn't swallow the edit to the box before it.
+function saver(url, ms = 600) {
+  let pending = {}, t;
+  return (patch) => {
+    Object.assign(pending, patch);
+    clearTimeout(t);
+    t = setTimeout(() => { const p = pending; pending = {}; PATCH(url, p); }, ms);
+  };
 }
 
 function toast(text) {
@@ -363,7 +377,7 @@ async function storiesView() {
   const list = await GET('/api/stories');
   railCache.stories = list;
   const main = frame('stories', {top: h('button', {class: 'sqbtn', 'aria-label': 'New story', onclick: newStory}, icon('plus'))});
-  main.append(h('div', {class: 'head'}, h('h1', {}, 'Stories'), h('button', {class: 'btn primary', onclick: newStory}, icon('plus'), 'New story')));
+  main.append(h('div', {class: 'head'}, h('h1', {}, 'Stories'), h('button', {class: 'btn primary', 'data-tour': 'new-story', onclick: newStory}, icon('plus'), 'New story')));
   if (!list.length) return main.append(h('div', {class: 'empty'}, h('button', {class: 'btn primary', onclick: newStory}, 'New story')));
   main.append(h('div', {class: 'scards'}, list.map((s) => h('a', {class: 'scard', href: `#/story/${s.id}`},
     s.cast.length ? h('div', {class: 'stack'}, s.cast.slice(0, 6).map((c) => portrait(c, 'width:44px;height:56px'))) : null,
@@ -377,10 +391,10 @@ async function storyView(id, tab) {
   railCache.story = s;
   tab = tab || query().tab || 'scenes';
   const main = frame('stories', {story: id});
-  const save = debounce((patch) => PATCH(`/api/stories/${id}`, patch));
+  const save = saver(`/api/stories/${id}`);
   const title = h('input', {class: 'title-input', value: s.title, 'aria-label': 'Title', oninput: () => save({title: title.value})});
   main.append(h('div', {class: 'story-head'}, h('div', {class: 'grow'}, title),
-    tab === 'scenes' ? h('button', {class: 'btn primary', onclick: () => newSceneSheet(s)}, icon('plus'), 'New scene') : null));
+    tab === 'scenes' ? h('button', {class: 'btn primary', 'data-tour': 'new-scene', onclick: () => newSceneSheet(s)}, icon('plus'), 'New scene') : null));
   const tabs = [['scenes', 'Scenes'], ['feelings', 'Feelings'], ['setup', 'Setup'], ['journal', 'Journal']];
   const body = h('div');
   const bar = h('div', {class: 'pills quiet', style: 'max-width:460px;margin-bottom:20px'}, tabs.map(([k, label]) => h('button', {class: k === tab ? 'on' : '', onclick: () => {
@@ -500,7 +514,7 @@ function storySetup(s, body, save) {
   const ta = (key, rows, cls = 'prose') => h('textarea', {class: cls, value: s[key] || '', rows, oninput: (e) => save({[key]: e.target.value})});
   const set = (k) => (v) => PATCH(`/api/stories/${s.id}`, {[k]: v});
   body.append(h('div', {class: 'stack-v', style: 'max-width:760px'},
-    fieldCard('Premise', ta('premise', 6)),
+    mark(fieldCard('Premise', ta('premise', 6)), 'premise'),
     fieldCard('How it is written', ta('directive', 3, '')),
     h('div', {class: 'group'},
       line('Style', seg(STYLES, s.style, set('style'))),
@@ -531,7 +545,7 @@ function storySetup(s, body, save) {
   wrap.append(pBox);
 
   wrap.append(h('h3', {}, 'Cast'));
-  const castBox = h('div', {class: 'chips'});
+  const castBox = h('div', {class: 'chips', 'data-tour': 'cast'});
   for (const c of s.cast) castBox.append(h('span', {class: 'chip'}, avatar(c, 'sm'), h('a', {href: `#/character/${c.id}`}, c.name),
     h('button', {class: 'icon', style: 'width:24px;height:24px;margin-right:-8px', 'aria-label': `Remove ${c.name}`, onclick: async () => { await DEL(`/api/stories/${s.id}/cast/${c.id}`); storyView(s.id, 'setup'); }}, icon('close'))));
   castBox.append(h('button', {class: 'chip plain', onclick: () => addCastSheet(s)}, icon('plus'), 'Add'));
@@ -661,16 +675,16 @@ async function sceneView(id) {
 
   const titleBox = h('div', {class: 'stage-title', onclick: () => editScene()});
   const castBtn = h('button', {class: 'cast', 'aria-label': "Who's here", onclick: () => presenceSheet()});
-  const feelBtn = ibtn('heart', () => side.classList.toggle('open'), {class: 'icon feel-btn', title: 'Feelings'});
+  const feelBtn = ibtn('heart', () => side.classList.toggle('open'), {class: 'icon feel-btn', title: 'Feelings', 'data-tour': 'feelings-btn'});
   const head = h('div', {class: 'stage-head'},
     ibtn('back', () => (location.hash = `#/story/${sc.story.id}`), {class: 'icon back', title: 'Back'}),
     castBtn, titleBox,
-    h('button', {class: 'btn small', style: 'border-style:dashed', title: 'What if', onclick: () => newSceneSheet(story || {id: sc.story.id, cast: sc.cast}, null, {whatif: true, with: sc.here})},
+    h('button', {class: 'btn small', style: 'border-style:dashed', title: 'What if', 'data-tour': 'whatif', onclick: () => newSceneSheet(story || {id: sc.story.id, cast: sc.cast}, null, {whatif: true, with: sc.here})},
       icon('branch'), h('span', {}, 'What if')),
-    feelBtn, ibtn('more', () => sceneMenu(), {title: 'Scene menu'}));
+    feelBtn, ibtn('more', () => sceneMenu(), {title: 'Scene menu', 'data-tour': 'scene-menu'}));
   const logIn = h('div', {class: 'log-in'});
   const log = h('div', {class: 'log'}, logIn);
-  const speakers = h('div', {class: 'speakers'});
+  const speakers = h('div', {class: 'speakers', 'data-tour': 'speakers'});
   let as = localStorage.getItem(`bamah.as.${sc.story.id}`) || '';
   const asBtn = h('button', {class: 'asbtn', type: 'button', onclick: () => pickAs()});
   const input = h('textarea', {rows: 1, placeholder: 'Write', 'aria-label': 'Write'});
@@ -678,8 +692,8 @@ async function sceneView(id) {
   const attach = ibtn('clip', () => attachSheet(), {title: 'File'});
   const wand = ibtn('wand', () => suggest(), {title: 'Write my line'});
   const dock = h('div', {class: 'dock'}, h('div', {class: 'dock-in'}, speakers,
-    h('div', {class: 'composer'}, input, h('div', {class: 'cbar'}, attach, asBtn, h('span', {class: 'grow'}), wand, send))));
-  const side = h('aside', {class: 'side'});
+    h('div', {class: 'composer', 'data-tour': 'composer'}, input, h('div', {class: 'cbar'}, attach, asBtn, h('span', {class: 'grow'}), wand, send))));
+  const side = h('aside', {class: 'side', 'data-tour': 'feelings'});
   main.append(h('div', {class: 'scene'}, h('div', {class: 'stage'}, head, log, dock), side));
 
   input.addEventListener('input', grow);
@@ -1132,7 +1146,7 @@ async function charactersView() {
   const story = filter && list.flatMap((c) => c.stories).find((s) => String(s.id) === String(filter));
   main.append(h('div', {class: 'head'}, h('h1', {}, story ? story.title : 'Characters'),
     h('button', {class: 'btn', onclick: () => librarySheet(null)}, icon('image'), 'Portraits'),
-    h('button', {class: 'btn primary', onclick: newCharacter}, icon('plus'), 'New character')));
+    h('button', {class: 'btn primary', 'data-tour': 'new-character', onclick: newCharacter}, icon('plus'), 'New character')));
   const grid = h('div', {class: 'gallery'});
   for (const c of shown) {
     grid.append(h('a', {class: 'pcard', href: `#/character/${c.id}`, 'data-text': `${c.name} ${c.personality || ''}`.toLowerCase()},
@@ -1235,7 +1249,7 @@ async function characterView(id) {
     h('nav', {}, SECTIONS.map(([k, label, ic]) => h('a', {href: go(k), class: k === sec ? 'on' : ''}, icon(ic), label))));
   const main = frame('characters', {nav});
   main.style.cssText = 'max-width:none;padding:0;display:flex';
-  const save = debounce((patch) => PATCH(`/api/characters/${id}`, patch));
+  const save = saver(`/api/characters/${id}`);
   const file = h('input', {type: 'file', accept: 'image/*', class: 'hidden', onchange: async () => {
     const fd = new FormData();
     fd.append('file', file.files[0]);
@@ -1266,7 +1280,7 @@ async function characterView(id) {
         c.avatar ? h('img', {src: `/avatars/${c.avatar}`, alt: c.name}) : h('span', {class: 'letter'}, initial(c.name))),
       seg: seg([['photo', 'Photoreal'], ['painted', 'Painted'], ['anime', 'Anime']], style, (v) => { style = v; }),
       buttons: h('div', {class: 'row'}, gen, h('button', {class: 'btn grow', onclick: () => file.click()}, 'Upload'),
-        h('button', {class: 'sqbtn', style: 'width:40px;height:40px;border-radius:12px', title: 'Library', 'aria-label': 'Library', onclick: () => librarySheet(c, reload)}, icon('grid'))),
+        h('button', {class: 'sqbtn', style: 'width:40px;height:40px;border-radius:12px', title: 'Library', 'aria-label': 'Library', 'data-tour': 'library', onclick: () => librarySheet(c, reload)}, icon('grid'))),
     };
   };
 
@@ -1290,14 +1304,14 @@ async function characterView(id) {
     tied.value = c.persona_id || '';
     const name = h('input', {value: c.name, 'aria-label': 'Name', oninput: () => save({name: name.value})});
     col.append(h('h1', {style: 'margin:0 0 4px'}, 'Personality'),
-      h('div', {class: 'draftbar'}, h('label', {}, icon('wand'), words), draftBtn),
+      h('div', {class: 'draftbar', 'data-tour': 'draft'}, h('label', {}, icon('wand'), words), draftBtn),
       add(h('div', {class: 'group'}),
-        line('Name', name),
+        mark(line('Name', name), 'name'),
         line('Pronouns', h('input', {value: c.pronouns || '', 'aria-label': 'Pronouns', oninput: (e) => save({pronouns: e.target.value})})),
         line('Speaks as', seg([['', 'Story’s'], ['first', 'I'], ['third', 'She / he / they']], c.person || '', (v) => PATCH(`/api/characters/${id}`, {person: v || null}))),
         line('Style', seg([['', 'Story’s'], ...STYLES], c.style || '', (v) => PATCH(`/api/characters/${id}`, {style: v || null}))),
         personas.length ? line('Usually with', tied) : null),
-      fieldCard('Who they are', ta('personality', 5)),
+      mark(fieldCard('Who they are', ta('personality', 5)), 'who'),
       fieldCard('Inner life', ta('inner_life', 3)),
       fieldCard('How they talk', ta('voice', 3)),
       fieldCard('Always remembers', ta('key_memories', 3, '')),
@@ -1397,7 +1411,7 @@ async function settingsView() {
   wrap.append(h('div', {class: 'head'}, h('h1', {}, 'Settings')));
 
   wrap.append(h('h3', {style: 'margin-top:0'}, 'Models'));
-  const conns = h('div', {class: 'group'});
+  const conns = h('div', {class: 'group', 'data-tour': 'models'});
   for (const c of s.connections.filter((c) => c.preset !== 'chatgpt')) {
     conns.append(h('div', {class: 'rowline'},
       h('div', {class: 'grow'}, h('div', {style: 'font-weight:600'}, c.name), h('div', {class: 'small muted'}, [s.presets[c.preset]?.name, c.key_tail ? `•••• ${c.key_tail}` : null, c.preset === 'ollama' || c.preset === 'custom' ? c.base_url : null].filter(Boolean).join(' · '))),
@@ -1446,7 +1460,8 @@ async function settingsView() {
   const keep = (k) => (v) => { try { localStorage.setItem(k, v); } catch (e) {} applyLook(); };
   wrap.append(h('h3', {}, 'Reading'), h('div', {class: 'group'},
     line('Text size', seg([['0.9', 13], ['1', 15], ['1.12', 18], ['1.25', 21]].map(([v, px]) => [v, h('span', {style: `font:600 ${px}px var(--prose)`}, 'A')]), local('bamah.size', '1'), keep('bamah.size'))),
-    line('Theme', seg([['dark', 'Dark'], ['light', 'Light'], ['auto', 'Auto']], local('bamah.theme', 'dark'), keep('bamah.theme')))));
+    line('Theme', seg([['dark', 'Dark'], ['light', 'Light'], ['auto', 'Auto']], local('bamah.theme', 'dark'), keep('bamah.theme'))),
+    line('Tour', h('button', {class: 'btn small', onclick: () => tourStart()}, 'Start'))));
 
   wrap.append(h('h3', {}, 'Shared journal'));
   const gj = await GET('/api/journal');
@@ -1493,4 +1508,191 @@ function connectionSheet(s, c, done) {
   });
 }
 
-route();
+// --- The tour: a first story, one step at a time ----------------------------------------------
+// It points at one thing, says one thing, and waits while she does it. Progress is kept per device,
+// so it carries on across pages and reloads. It starts by itself on a device's first visit while there's no story yet.
+
+const TOUR = 'bamah.tour';
+const T = {state: null, root: null, spot: null, card: null, tick: null, checking: false, lastCheck: 0};
+const visible = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? el : null; };
+const pick = (...sels) => { for (const sel of sels) { const el = [...document.querySelectorAll(sel)].reverse().find(visible); if (el) return el; } return null; };
+const at = (re) => () => re.test(location.hash || '#/');
+const story = () => T.state?.story;
+const twoCharacters = async () => (await GET('/api/characters')).filter((c) => (c.personality || '').trim()).length >= 2;
+
+const STEPS = [
+  {title: 'Welcome to Bamah', center: true, next: 'Start',
+    text: "Bamah is a stage for your characters. In a few minutes you'll make two of them, put them in a scene together and see how they take to each other."},
+  {title: 'First, a model', go: '#/settings', at: at(/^#\/settings/), target: () => pick('[data-tour=models] .btn', '[data-tour=models]'),
+    text: 'Your characters need a model to speak through. Tap Add, choose a service and paste its key. OpenRouter is the easiest start: one key opens almost every model. Then choose which model they use.',
+    done: async () => { const x = await getSettings(true); return x.connections.length > 0 && !!x.settings.default_model; }},
+  {title: 'Your first character', go: '#/characters', at: at(/^#\/characters/), target: () => pick('[data-tour=new-character]'),
+    text: 'Tap New character.', skip: twoCharacters, done: async () => /^#\/character\/\d+/.test(location.hash)},
+  {title: 'Start from a few words', at: at(/^#\/character\/\d+/), target: () => pick('[data-tour=draft]'), skip: twoCharacters,
+    text: 'Write a few words about who they are, like “proud, funny, runs her late mother’s kitchen”, and tap Draft. It fills in the rest, and you can change any of it.',
+    done: async () => !!document.querySelector('[data-tour=who] textarea')?.value.trim()},
+  {title: 'Their name', at: at(/^#\/character\/\d+/), target: () => pick('[data-tour=name]'), skip: twoCharacters,
+    text: 'Give them a name here. Their pronouns, how they speak and their style are just below.'},
+  {title: 'A face', at: at(/^#\/character\/\d+/), target: () => pick('[data-tour=library]'), skip: twoCharacters, next: 'Next',
+    text: 'Open the library and choose a portrait, or upload one of your own.',
+    done: async () => !!document.querySelector('.bigportrait img')},
+  {title: 'Who they are', at: at(/^#\/character\/\d+/), target: () => pick('[data-tour=who]'), skip: twoCharacters,
+    text: 'These boxes are the character: who they are, their inner life, how they talk, what they always remember. The more specific, the more they sound like themselves.'},
+  {title: 'Someone to talk to', go: '#/characters', at: at(/^#\/character/), target: () => pick('[data-tour=new-character]'), skip: twoCharacters,
+    text: 'Now make a second character the same way: New character, a few words, Draft, a name and a face. Then Next.',
+    done: twoCharacters, next: 'Next', hold: true},
+  {title: 'A story', go: '#/', at: at(/^#\/?(\?.*)?$/), target: () => pick('[data-tour=new-story]', '.empty .btn'),
+    text: 'Tap New story.', done: async () => /^#\/story\/\d+/.test(location.hash),
+    keep: () => ({story: +location.hash.match(/^#\/story\/(\d+)/)[1]})},
+  {title: 'What it’s about', go: () => `#/story/${story()}?tab=setup`, at: () => location.hash.startsWith(`#/story/${story()}`) && query().tab === 'setup',
+    target: () => pick('[data-tour=premise]'),
+    text: 'Give the story a title at the top and a premise here. Everyone in the story knows the premise.'},
+  {title: 'The cast', go: () => `#/story/${story()}?tab=setup`, at: () => location.hash.startsWith(`#/story/${story()}`) && query().tab === 'setup',
+    target: () => pick('[data-tour=cast]'), text: 'Add both characters to the cast with Add.',
+    done: async () => (await GET(`/api/stories/${story()}`)).cast.length >= 2},
+  {title: 'A scene', go: () => `#/story/${story()}?tab=scenes`, at: () => location.hash.startsWith(`#/story/${story()}`) && (query().tab || 'scenes') === 'scenes',
+    target: () => pick('[data-tour=new-scene]'),
+    text: 'Tap New scene. Say where and when it happens, choose who’s in it, and Start.',
+    done: async () => /^#\/scene\/\d+/.test(location.hash), keep: () => ({scene: +location.hash.match(/^#\/scene\/(\d+)/)[1]})},
+  {title: 'Set it going', go: () => `#/scene/${T.state.scene}`, at: at(/^#\/scene\/\d+/), target: () => pick('[data-tour=composer]'),
+    text: 'Write what happens, as the narrator: someone walks in, a letter arrives, a question is asked. Send it, and the characters answer.',
+    done: async () => !!document.querySelector('.msg.last .acts')},
+  {title: 'What they don’t say', at: at(/^#\/scene\/\d+/), target: () => pick('.msg.last .inner', '.msg .inner'),
+    text: 'This line is what the character feels and keeps to themselves. It shapes how they answer, and only you can see it.'},
+  {title: 'When a line isn’t right', at: at(/^#\/scene\/\d+/), target: () => pick('.msg.last .acts'),
+    text: 'The circle arrow asks for a new take. The thumbs down lets you say what they’d really do, and can keep it as a correction for next time. The crossed arrows try the line with another model.'},
+  {title: 'Who speaks next', at: at(/^#\/scene\/\d+/), target: () => pick('[data-tour=speakers]'),
+    text: 'Tap a face to have that character answer, or Go on to let the scene decide.'},
+  {title: 'How they feel', at: at(/^#\/scene\/\d+/), target: () => innerWidth >= 1280 ? pick('[data-tour=feelings]') : pick('[data-tour=feelings-btn]'),
+    text: 'After every line, each character’s mood and feelings toward the others are updated here. The bars show how strongly they feel it.'},
+  {title: 'What if', at: at(/^#\/scene\/\d+/), target: () => pick('[data-tour=whatif]', '[data-tour=scene-menu]'),
+    text: 'A what-if scene is a sketch. Nothing in it is remembered unless you decide it counts.'},
+  {title: 'When the scene is over', at: at(/^#\/scene\/\d+/), target: () => pick('[data-tour=scene-menu]'),
+    text: 'End it from this menu. Each character keeps memories of what they saw, and carries them into the next scene.'},
+  {title: 'That’s the stage', center: true, next: 'Done', text: 'You can take this tour again from Settings.'},
+];
+
+function tourSave() { try { localStorage.setItem(TOUR, JSON.stringify(T.state)); } catch (e) {} }
+
+function tourStart() {
+  T.state = {i: 0};
+  tourSave();
+  tourShow();
+}
+
+function tourEnd() {
+  T.state = null;
+  try { localStorage.removeItem(TOUR); localStorage.setItem('bamah.tour.seen', '1'); } catch (e) {}
+  clearInterval(T.tick);
+  T.root?.remove();
+  T.root = null;
+}
+
+async function tourGo(i) {
+  if (i < 0) i = 0;
+  if (i >= STEPS.length) return tourEnd();
+  T.state.i = i;
+  tourSave();
+  const st = STEPS[i];
+  try { if (st.skip && await st.skip()) return tourGo(i + 1); } catch (e) {}
+  const where = typeof st.go === 'function' ? st.go() : st.go;
+  if (where && st.at && !st.at()) location.hash = where;
+  tourShow();
+}
+
+async function tourNext() {
+  const st = STEPS[T.state.i];
+  if (st.keep) Object.assign(T.state, st.keep());
+  tourGo(T.state.i + 1);
+}
+
+function tourShow() {
+  if (!T.state) return;
+  if (!T.root) {
+    T.spot = h('div', {class: 'tour-spot'});
+    T.card = h('div', {class: 'tour-card', role: 'dialog', 'aria-live': 'polite'});
+    T.root = h('div', {class: 'tour'}, T.spot, T.card);
+    document.body.append(T.root);
+    clearInterval(T.tick);
+    T.tick = setInterval(tourFollow, 300);
+  }
+  const st = STEPS[T.state.i];
+  const steps = STEPS.length - 2;          // the welcome and the last card don't count
+  T.card.innerHTML = '';
+  const n = T.state.i;
+  add(T.card,
+    !st.center ? h('div', {class: 'tour-n'}, `${n} / ${steps}`) : null,
+    h('div', {class: 'tour-t'}, st.title),
+    h('div', {class: 'tour-x'}, st.text),
+    h('div', {class: 'tour-b'},
+      n > 0 && !st.center ? h('button', {class: 'btn quiet small', onclick: () => tourGo(n - 1)}, 'Back') : null,
+      h('button', {class: 'btn quiet small', onclick: tourEnd}, n === 0 ? 'Not now' : st.center ? null : 'Skip tour'),
+      h('span', {class: 'grow'}),
+      h('button', {class: 'btn small tour-there hidden', onclick: () => { const w = typeof st.go === 'function' ? st.go() : st.go; if (w) location.hash = w; }}, 'Take me there'),
+      h('button', {class: `btn primary small tour-next ${st.done && (!st.next || st.hold) ? 'hidden' : ''}`, onclick: tourNext}, st.next || 'Next')));
+  if (st.center && n > 0) T.card.querySelector('.tour-b .btn.quiet')?.remove();
+  T.root.classList.toggle('center', !!st.center);
+  tourFollow();
+}
+
+// Keep the highlight on its target, and check whether she has done what the step asks.
+function tourFollow() {
+  if (!T.state || !T.root) return;
+  const st = STEPS[T.state.i];
+  const blocked = !!document.querySelector('.veil');            // a sheet is open: let it have the screen
+  T.root.classList.toggle('under', blocked);
+  const here = !st.at || st.at();
+  T.card.querySelector('.tour-there')?.classList.toggle('hidden', here || !st.go);
+  const el = !st.center && here ? st.target?.() : null;
+  if (el) {
+    const r = el.getBoundingClientRect();
+    if (r.top < 0 || r.bottom > innerHeight) el.scrollIntoView({block: 'center', behavior: 'smooth'});
+    const pad = 6;
+    Object.assign(T.spot.style, {display: 'block', left: `${r.left - pad}px`, top: `${r.top - pad}px`, width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px`});
+    placeCard(r);
+  } else {
+    T.spot.style.display = 'none';
+    placeCard(null);
+  }
+  if (st.done && !T.checking && Date.now() - T.lastCheck > 900) {      // doing it often takes her to another page
+    T.checking = true;
+    T.lastCheck = Date.now();
+    st.done().then((ok) => {
+      T.checking = false;
+      if (!ok || STEPS[T.state?.i] !== st) return;
+      if (st.next) T.card.querySelector('.tour-next')?.classList.remove('hidden');
+      else setTimeout(() => STEPS[T.state?.i] === st && tourNext(), 500);
+    }).catch(() => { T.checking = false; });
+  }
+}
+
+function placeCard(r) {
+  const c = T.card;
+  const w = Math.min(340, innerWidth - 24);
+  c.style.width = `${w}px`;
+  const ch = c.offsetHeight || 180;
+  let left, top;
+  if (!r) { left = (innerWidth - w) / 2; top = Math.max(12, (innerHeight - ch) / 2); }
+  else {
+    left = Math.min(Math.max(12, r.left), innerWidth - w - 12);
+    if (r.bottom + 14 + ch < innerHeight - 8) top = r.bottom + 14;
+    else if (r.top - 14 - ch > 8) top = r.top - 14 - ch;
+    else { top = innerHeight - ch - 12; left = (innerWidth - w) / 2; }
+  }
+  c.style.left = `${left}px`;
+  c.style.top = `${top}px`;
+}
+
+// On the first visit to an empty Bamah, or to carry on where she left off.
+async function tourMaybe() {
+  try { T.state = JSON.parse(localStorage.getItem(TOUR) || 'null'); } catch (e) { T.state = null; }
+  if (T.state) return tourShow();
+  let seen = null;
+  try { seen = localStorage.getItem('bamah.tour.seen'); } catch (e) {}
+  if (seen) return;
+  try {
+    if (!(await GET('/api/stories')).length) tourStart();
+  } catch (e) {}
+}
+
+route().then(tourMaybe);

@@ -1,0 +1,52 @@
+<sub>[Bamah docs](README.md) › Using it</sub>
+
+# Characters
+
+**Characters** shows everyone you've made, as portrait cards, with their pronouns, a line about them, the stories they're in and, if they have their own, their model. The list on the left narrows it to one story's cast, and the search box finds someone by name.
+
+![The Characters page](images/characters.webp)
+
+A character belongs to you, not to a story, so the same person can be in several stories. What they remember and feel is kept per story.
+
+## Their page
+
+Tap a character to open their page. The menu down the side has their **Personality**, **Portrait**, **Memory**, **Feelings**, **Corrections**, **Journal** and **Model**.
+
+![Mara's page](images/character.webp)
+
+### Drafting from a few words
+
+The box at the top takes a few words, like "sad, funny, works the morning shift, hates cinnamon", and **Draft** writes the whole sheet from them: pronouns, appearance, who they are, their inner life, how they talk and what they always remember. If the sheet already has something in it, Bamah asks first before replacing it.
+
+### The sheet
+
+- **Name** and **Pronouns.**
+- **Speaks as:** "I", or "she", "he" or "they", or whatever the story uses. "I" means their actions come in asterisks, like `*I set the knife down.*`
+- **Style:** **Talk** (just what they say), **Roleplay** (what they say and do), or **Narrative** (novel prose). **Story's** follows the story's setting.
+- **Usually with:** one of your personas, if you usually play opposite this character. See [Stories and scenes](scenes.md#you-play).
+- **Who they are:** their story, their traits, the way they come across.
+- **Inner life:** what they want, what they fear, what they hide.
+- **How they talk:** their voice, the words they use and don't.
+- **Always remembers:** a few facts that are always in front of them.
+- **Always:** one instruction that always wins, like "never says I love you first".
+- **Appearance** sits beside the portrait. Everyone in a scene with them is told what they look like, and portraits are made from it.
+
+Everything saves as you type.
+
+## Corrections
+
+When a character says something they never would, use the thumbs down on that line and write what they'd really do. **Save and redo** keeps that note on their **Corrections** page for good, and takes the line again. **Redo** only takes it again, this once.
+
+A thumbs up keeps a line as an example of how they sound. Those are under **Sounded right** on the same page, and the character sees some of them before they speak.
+
+## Their journal
+
+The **Journal** is notes that come to mind when one of their keyphrases comes up in a scene: a person's name, a place, an object. Each entry has a title, keyphrases separated by commas, and the note itself. **File** brings in a Word document, PDF or text file as an entry, like a backstory you've already written.
+
+A story has a journal of its own for things everyone in it would know, and **Settings** has a shared journal for every story.
+
+## Their model
+
+**Model** gives this character a model of their own. Otherwise they use the story's, and the story uses the default from Settings. This is also where you delete a character.
+
+<sub>Next: [Stories and scenes](scenes.md)</sub>
