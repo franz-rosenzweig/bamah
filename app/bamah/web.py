@@ -19,7 +19,7 @@ log = logging.getLogger("bamah.web")
 
 STATIC = Path(__file__).parent / "static"
 COOKIE = "bamah"
-OPEN = ("/login", "/api/login", "/static/app.css", "/static/icon.svg", "/manifest.webmanifest")
+OPEN = ("/login", "/api/login", "/static/app.css", "/static/icon.svg", "/manifest.webmanifest", "/fonts/")
 
 @asynccontextmanager
 async def _life(_app):
@@ -127,8 +127,16 @@ CHAR_FIELDS = ("name", "personality", "inner_life", "key_memories", "voice", "di
 @app.get("/api/characters")
 def characters():
     with db.connect() as d:
-        return db.rows(d.execute("select id, name, avatar, hue, substr(personality, 1, 160) as personality "
-                                 "from character order by name collate nocase"))
+        out = db.rows(d.execute("select id, name, avatar, hue, pronouns, model, substr(personality, 1, 160) as personality "
+                                "from character order by name collate nocase"))
+        ties: dict[int, list] = {}
+        for r in d.execute("select m.character_id, s.id, s.title from cast_member m join story s on s.id = m.story_id "
+                           "order by s.updated_at desc"):
+            ties.setdefault(r["character_id"], []).append({"id": r["id"], "title": r["title"]})
+        for c in out:
+            c["stories"] = ties.get(c["id"], [])
+            c["model_label"] = models.label(c["model"]).split(" · ")[0] if c["model"] else ""
+        return out
 
 
 @app.post("/api/characters")
@@ -344,9 +352,10 @@ async def set_feeling(request: Request):
     """She can set how someone feels by hand; it becomes the latest."""
     body = await _body(request)
     with db.connect() as d:
-        fid = d.execute("insert into feeling(story_id, character_id, mood, toward) values (?, ?, ?, ?)",
+        fid = d.execute("insert into feeling(story_id, character_id, mood, toward, word, strength) values (?, ?, ?, ?, ?, ?)",
                         (body["story_id"], body["character_id"], str(body.get("mood", "")),
-                         json.dumps(body.get("toward") or {}))).lastrowid
+                         json.dumps(body.get("toward") or {}), str(body.get("word", "")),
+                         json.dumps(body.get("strength") or {}))).lastrowid
     return {"id": fid}
 
 
@@ -960,7 +969,7 @@ def backup():
 @app.get("/manifest.webmanifest")
 def manifest():
     return JSONResponse({"name": config.NAME, "short_name": config.NAME, "start_url": "/", "display": "standalone",
-                         "background_color": "#f6f1e9", "theme_color": "#f6f1e9",
+                         "background_color": "#120e0f", "theme_color": "#120e0f",
                          "icons": [{"src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml"}]})
 
 
@@ -970,6 +979,14 @@ def static(name: str):
     if not p.exists():
         raise HTTPException(404)
     return FileResponse(p, headers={"cache-control": "no-cache"})
+
+
+@app.get("/fonts/{name}")
+def fonts(name: str):
+    p = STATIC / "fonts" / Path(name).name
+    if not p.exists():
+        raise HTTPException(404)
+    return FileResponse(p, headers={"cache-control": "max-age=31536000, immutable"})
 
 
 @app.get("/")

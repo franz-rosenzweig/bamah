@@ -40,7 +40,8 @@ class FakeModel:
             text = "Relationships and growth\nWary.\nImportant facts\nParis.\nOngoing threads\nThe letter."
         elif system.startswith("You keep track of how"):
             people = re.search(r"People in the story: (.*)", last).group(1).split(", ")
-            text = json.dumps({"mood": "prickly", "toward": {p: "doesn't trust them" for p in people if p}})
+            text = json.dumps({"word": "prickly", "mood": "prickly",
+                               "toward": {p: {"how": "doesn't trust them", "strength": 4} for p in people if p}})
         elif system.startswith("You run the turn order"):
             names = re.findall(r"^- ([^:]+):", last, re.M)
             text = ", ".join(reversed(names))

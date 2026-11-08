@@ -59,7 +59,7 @@ Ongoing threads
 Under relationships, say how {name} stands with each person who matters to them, and how that has been changing. Keep everything that still holds, change what the new memories changed, and drop what no longer matters. Stay under 1,500 characters. Return only the notes."""
 
 FEELING_SYSTEM = """You keep track of how the characters in a story feel. Read the latest moment and say how {name} feels now. Answer with JSON only, in this shape:
-{{"mood": "how {name} feels right now, in a few words", "toward": {{"<name of someone in the story>": "how {name} feels about them now, in a few words"}}}}
+{{"word": "one word for how {name} feels right now", "mood": "how {name} feels right now, in a few words", "toward": {{"<name of someone in the story>": {{"how": "how {name} feels about them now, in a few words", "strength": <1 to 5, how strongly {name} feels it>}}}}}}
 Include everyone {name} has feelings about. Keep what still holds from before, and change only what this moment changed."""
 
 PICK_SYSTEM = """You run the turn order in a group scene of a story. From the last lines, decide who in the room would naturally speak or react next, in order. Reply with only their names, separated by commas, at most {most}. Reply NOBODY if nobody would."""
@@ -815,14 +815,20 @@ async def update_feelings(story_id: int, scene_id: int, cid: int, eid: int):
         by_name = {str(v).lower(): k for k, v in people.items()}
         for k, v in people.items():
             by_name.setdefault(str(v).split()[0].lower(), k)
-        toward = {}
-        for n, how in (obj.get("toward") or {}).items():
+        toward, strength = {}, {}
+        for n, v in (obj.get("toward") or {}).items():
             k = by_name.get(str(n).lower()) or by_name.get(str(n).split()[0].lower() if str(n).split() else "")
+            how, much = (v.get("how"), v.get("strength")) if isinstance(v, dict) else (v, None)
             if k is not None and how:
                 toward[str(k)] = str(how)[:200]
+                try:
+                    strength[str(k)] = min(5, max(1, round(float(much))))
+                except (TypeError, ValueError):
+                    pass
+        word = str(obj.get("word") or "").strip().split(" ")[0].strip(".,;:!").capitalize()[:24]
         with db.connect() as d:
-            d.execute("insert into feeling(story_id, character_id, event_id, mood, toward) values (?, ?, ?, ?, ?)",
-                      (story_id, cid, eid, str(obj.get("mood", ""))[:200], json.dumps(toward)))
+            d.execute("insert into feeling(story_id, character_id, event_id, mood, toward, word, strength) values (?, ?, ?, ?, ?, ?, ?)",
+                      (story_id, cid, eid, str(obj.get("mood", ""))[:200], json.dumps(toward), word, json.dumps(strength)))
 
 
 async def end_scene(scene_id: int):

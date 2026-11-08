@@ -204,6 +204,9 @@ COLUMNS = [
     ("story", "person", "text default 'first'"),
     ("story", "personas", "text default '[]'"),
     ("scene", "whatif", "integer default 0"),  # a scene that doesn't count: no memories, no feelings
+    ("feeling", "word", "text default ''"),          # the mood in one word
+    ("feeling", "strength", "text default '{}'"),    # {"other character id": 1-5}
+    ("portrait", "source", "text default ''"),       # where a library portrait came from
 ]
 
 DEFAULTS = {"short_term": "60000", "recall": "6", "feelings": "1", "round": "3", "repetition": "1"}
@@ -269,12 +272,12 @@ def row(r) -> dict | None:
     if r is None:
         return None
     d = dict(r)
-    for k in ("versions", "witnesses", "recalled", "roles", "toward", "personas"):
+    for k in ("versions", "witnesses", "recalled", "roles", "toward", "personas", "strength"):
         if k in d and isinstance(d[k], str):
             try:
                 d[k] = json.loads(d[k])
             except ValueError:
-                d[k] = [] if k != "toward" else {}
+                d[k] = {} if k in ("toward", "strength") else []
     return d
 
 
