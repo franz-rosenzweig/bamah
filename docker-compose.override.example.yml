@@ -1,0 +1,5 @@
+# Copy to docker-compose.override.yml (git ignores it) for what only fits your server.
+services:
+  web:
+    ports:
+      - "100.x.y.z:8465:8000"          # also answer on your Tailscale address

@@ -1,0 +1,7 @@
+.env
+docker-compose.override.yml
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
+app/bamah/extras/

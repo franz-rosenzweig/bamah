@@ -1,0 +1,25 @@
+# Bamah: a place to develop the characters of a story by putting them in scenes together.
+# It answers on 127.0.0.1:8465. Settings are in .env (see .env.example); anything that only fits
+# one server (another address to listen on) goes in docker-compose.override.yml.
+name: bamah
+
+services:
+  web:
+    build: ./app
+    image: bamah:latest
+    container_name: bamah
+    user: "${BAMAH_USER:-1000:1000}"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${BAMAH_PORT:-8465}:8000"
+    volumes:
+      - ${DATA_DIR:-./data}:/data
+    environment:
+      BAMAH_DATA: /data
+      BAMAH_PASSWORD: ${BAMAH_PASSWORD:-}
+      BAMAH_PORT: ${BAMAH_PORT:-8465}
+      BAMAH_NAME: ${BAMAH_NAME:-Bamah}
+      TZ: ${TZ:-UTC}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reach Ollama running on the same machine
+    mem_limit: 512m
