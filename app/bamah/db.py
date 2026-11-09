@@ -207,6 +207,17 @@ COLUMNS = [
     ("feeling", "word", "text default ''"),          # the mood in one word
     ("feeling", "strength", "text default '{}'"),    # {"other character id": 1-5}
     ("portrait", "source", "text default ''"),       # where a library portrait came from
+    ("scene", "background", "text default ''"),      # her picture behind the scene, in backgrounds/
+    ("scene", "aim", "text default ''"),             # where she wants the scene to go; every character steers toward it
+    ("event", "reason", "text default ''"),          # why the turn order picked this character
+    ("feeling", "shows", "text default '{}'"),       # {"other character id": what they let that person see}
+    ("character", "sore_spot", "text default ''"),   # what they steer away from, and what they do when it's pressed
+    ("memory", "replaced_by", "integer"),            # a newer memory that changed this fact; it stays, out of recall
+    ("memory", "heat", "real default 0.6"),          # 0 to 1: up when it comes back to mind, fading a little with each pass
+    ("memory", "recalls", "integer default 0"),
+    ("memory", "last_recalled", "text"),
+    ("memory", "from_seq", "integer"),               # the lines of its scene it was written from
+    ("memory", "to_seq", "integer"),
 ]
 
 DEFAULTS = {"short_term": "60000", "recall": "6", "feelings": "1", "round": "3", "repetition": "1", "thinking": "low"}
@@ -272,12 +283,12 @@ def row(r) -> dict | None:
     if r is None:
         return None
     d = dict(r)
-    for k in ("versions", "witnesses", "recalled", "roles", "toward", "personas", "strength"):
+    for k in ("versions", "witnesses", "recalled", "roles", "toward", "personas", "strength", "shows"):
         if k in d and isinstance(d[k], str):
             try:
                 d[k] = json.loads(d[k])
             except ValueError:
-                d[k] = {} if k in ("toward", "strength") else []
+                d[k] = {} if k in ("toward", "strength", "shows") else []
     return d
 
 

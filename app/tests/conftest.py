@@ -41,7 +41,16 @@ class FakeModel:
         elif system.startswith("You keep track of how"):
             people = re.search(r"People in the story: (.*)", last).group(1).split(", ")
             text = json.dumps({"word": "prickly", "mood": "prickly",
-                               "toward": {p: {"how": "doesn't trust them", "strength": 4} for p in people if p}})
+                               "toward": {p: {"how": "doesn't trust them", "shows": "polite", "strength": 4} for p in people if p}})
+        elif system.startswith("You help a novelist turn her notes"):
+            paras = [x.strip() for x in last.split("\n\n") if x.strip()]
+            text = json.dumps({"entries": [{"title": " ".join(x.split()[:2]), "keys": [x.split()[0]], "text": x} for x in paras]})
+        elif system.startswith("You check a novelist's new journal entries"):
+            text = json.dumps({"issues": [{"kind": "spelling", "entries": [1, 3], "note": "Ortiz or Ortis?"},
+                                          {"kind": "bogus", "entries": [1]}]})
+        elif system.startswith("You help a novelist keep notes"):
+            text = json.dumps({"nothing": True}) if "weather" in last else \
+                json.dumps({"title": "The letter", "keys": ["letter", "Paris"], "text": "Ben hid a letter from Paris."})
         elif system.startswith("You run the turn order"):
             names = re.findall(r"^- ([^:]+):", last, re.M)
             text = ", ".join(reversed(names))

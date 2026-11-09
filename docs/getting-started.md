@@ -2,10 +2,10 @@
 
 # Getting started
 
-This page takes you through your first story, step by step: a model, two characters, a story and a scene. It's the same walk the tour gives you inside Bamah. The first time you open Bamah on a device and there's no story yet, the tour starts by itself and points at each thing as you go. You can stop it any time with **Skip tour** and take it again from **Settings**.
+This page takes you through your first story, step by step: a model, two characters, a story and a scene. It's the same walk the tour gives you inside Bamah. The first time you open Bamah on a device, a card in the bottom corner offers the tour: **Start** takes you through it, pointing at each thing as you go, and **Skip** leaves it for later. Either way, it's always there in **Settings › Tour**, and you can stop it any time with **Skip tour**.
 
-![The tour's first card](images/start-01-welcome.webp)
-*The tour's first card, the first time Bamah opens.*
+![The card that offers the tour](images/start-01-invite.webp)
+*The card that offers the tour, the first time Bamah opens.*
 
 ## 1. Add a model
 

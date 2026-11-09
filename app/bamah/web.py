@@ -19,7 +19,7 @@ log = logging.getLogger("bamah.web")
 
 STATIC = Path(__file__).parent / "static"
 COOKIE = "bamah"
-OPEN = ("/login", "/api/login", "/static/app.css", "/static/icon.svg", "/manifest.webmanifest", "/fonts/")
+OPEN = ("/login", "/api/login", "/static/app.css", "/static/themes.js", "/static/icon.svg", "/manifest.webmanifest", "/fonts/")
 
 @asynccontextmanager
 async def _life(_app):
@@ -121,7 +121,7 @@ def _sse(gen):
 # --- Characters -------------------------------------------------------------------------------
 
 CHAR_FIELDS = ("name", "personality", "inner_life", "key_memories", "voice", "directive", "model", "hue",
-               "pronouns", "appearance", "person", "style", "persona_id")
+               "pronouns", "appearance", "person", "style", "persona_id", "sore_spot")
 
 
 @app.get("/api/characters")
@@ -268,10 +268,8 @@ def avatar_file(name: str):
 async def draft(cid: int, request: Request):
     body = await _body(request)
     words = str(body.get("words", "")).strip()
-    if not words:
-        raise HTTPException(400, "empty")
     try:
-        return await engine.draft_character(cid, words)
+        return await engine.draft_character(cid, words, replace=bool(body.get("replace")))
     except models.ModelError as e:
         return JSONResponse({"error": e.code, "detail": e.detail}, status_code=502)
 
@@ -334,6 +332,7 @@ async def edit_memory(mid: int, request: Request):
 @app.delete("/api/memories/{mid}")
 def delete_memory(mid: int):
     with db.connect() as d:
+        d.execute("update memory set replaced_by = null where replaced_by = ?", (mid,))
         d.execute("delete from memory where id = ?", (mid,))
     return {"ok": True}
 
@@ -352,10 +351,10 @@ async def set_feeling(request: Request):
     """She can set how someone feels by hand; it becomes the latest."""
     body = await _body(request)
     with db.connect() as d:
-        fid = d.execute("insert into feeling(story_id, character_id, mood, toward, word, strength) values (?, ?, ?, ?, ?, ?)",
+        fid = d.execute("insert into feeling(story_id, character_id, mood, toward, word, strength, shows) values (?, ?, ?, ?, ?, ?, ?)",
                         (body["story_id"], body["character_id"], str(body.get("mood", "")),
                          json.dumps(body.get("toward") or {}), str(body.get("word", "")),
-                         json.dumps(body.get("strength") or {}))).lastrowid
+                         json.dumps(body.get("strength") or {}), json.dumps(body.get("shows") or {}))).lastrowid
     return {"id": fid}
 
 
@@ -538,8 +537,8 @@ async def new_scene(sid: int, request: Request):
     with db.connect() as d:
         _one(d, "select id from story where id = ?", (sid,))
         seq = (d.execute("select max(seq) from scene where story_id = ?", (sid,)).fetchone()[0] or 0) + 1
-        scid = d.execute("insert into scene(story_id, title, setting, seq, whatif) values (?, ?, ?, ?, ?)",
-                         (sid, str(body.get("title", "")), str(body.get("setting", "")), seq,
+        scid = d.execute("insert into scene(story_id, title, setting, aim, seq, whatif) values (?, ?, ?, ?, ?, ?)",
+                         (sid, str(body.get("title", "")), str(body.get("setting", "")), str(body.get("aim", "")), seq,
                           1 if body.get("whatif") else 0)).lastrowid
         for cid in body.get("characters") or []:
             d.execute("insert or ignore into cast_member(story_id, character_id) values (?, ?)", (sid, int(cid)))
@@ -580,16 +579,58 @@ async def edit_scene(scid: int, request: Request):
     if "whatif" in body:
         body["whatif"] = 1 if body["whatif"] else 0
     with db.connect() as d:
-        _update(d, "scene", scid, body, ("title", "setting", "whatif"))
+        _update(d, "scene", scid, body, ("title", "setting", "aim", "whatif"))
     return {"ok": True}
 
 
 @app.delete("/api/scenes/{scid}")
 def delete_scene(scid: int):
     with db.connect() as d:
+        bg = (d.execute("select background from scene where id = ?", (scid,)).fetchone() or {"background": ""})["background"]
         d.execute("delete from memory where scene_id = ?", (scid,))
         d.execute("delete from scene where id = ?", (scid,))
+    _drop_background(bg)
     return {"ok": True}
+
+
+# A picture behind a scene's lines, chosen by her (the page dims it in the theme's colour).
+@app.post("/api/scenes/{scid}/background")
+async def scene_background(scid: int, file: UploadFile):
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(400, "image")
+    data = await file.read()
+    if len(data) > 12_000_000:
+        raise HTTPException(413, "big")
+    with db.connect() as d:
+        old = _one(d, "select background from scene where id = ?", (scid,))["background"]
+        name = images.save(data, f"scene{scid}", "backgrounds")
+        d.execute("update scene set background = ? where id = ?", (name, scid))
+    _drop_background(old)
+    return {"background": name}
+
+
+@app.delete("/api/scenes/{scid}/background")
+def scene_background_off(scid: int):
+    with db.connect() as d:
+        old = _one(d, "select background from scene where id = ?", (scid,))["background"]
+        d.execute("update scene set background = '' where id = ?", (scid,))
+    _drop_background(old)
+    return {"ok": True}
+
+
+def _drop_background(name: str | None):
+    if name:
+        f = config.path("backgrounds", Path(name).name)
+        if f.exists():
+            f.unlink()
+
+
+@app.get("/backgrounds/{name}")
+def background_file(name: str):
+    p = config.path("backgrounds", Path(name).name)
+    if not p.exists():
+        raise HTTPException(404)
+    return FileResponse(p, headers={"cache-control": "max-age=31536000, immutable"})
 
 
 @app.post("/api/scenes/{scid}/presence")
@@ -679,7 +720,49 @@ async def bring_in(file: UploadFile, target: str = Form(...), target_id: int = F
             jid = d.execute(f"insert into journal({col}, title, keys, text) values (?, ?, '', ?)",
                             (target_id, name, text)).lastrowid
             return {"journal": jid, "words": docs.words(text)}
+        if target == "shared":
+            jid = d.execute("insert into journal(title, keys, text) values (?, '', ?)", (name, text)).lastrowid
+            return {"journal": jid, "words": docs.words(text)}
     raise HTTPException(400, "target")
+
+
+@app.post("/api/journal/split")
+async def journal_split(file: UploadFile, story_id: int = Form(0)):
+    """Her pages, split into journal entries for her to look over. Nothing is saved yet."""
+    data = await file.read()
+    if len(data) > 20_000_000:
+        raise HTTPException(413, "big")
+    try:
+        text = docs.extract(Path(file.filename or "Untitled").name, data)
+    except docs.Unreadable:
+        raise HTTPException(415, "unreadable")
+    try:
+        return await engine.split_into_entries(text, story_id or None)
+    except models.ModelError as e:
+        return JSONResponse({"error": e.code, "detail": e.detail}, status_code=502)
+
+
+@app.post("/api/journal/batch")
+async def journal_batch(request: Request):
+    body = await _body(request)
+    with db.connect() as d:
+        n = 0
+        for e in body.get("entries") or []:
+            if str(e.get("text") or "").strip():
+                d.execute("insert into journal(story_id, character_id, title, keys, text) values (?, ?, ?, ?, ?)",
+                          (body.get("story_id"), body.get("character_id"), str(e.get("title") or ""), str(e.get("keys") or ""),
+                           str(e["text"]).strip()))
+                n += 1
+    return {"added": n}
+
+
+@app.post("/api/scenes/{scid}/journal-entry")
+async def scene_journal_entry(scid: int, request: Request):
+    body = await _body(request)
+    try:
+        return await engine.entry_from_lines(scid, [int(i) for i in body.get("event_ids") or []])
+    except models.ModelError as e:
+        return JSONResponse({"error": e.code, "detail": e.detail}, status_code=502)
 
 
 # --- Personas: the people she plays ---------------------------------------------------------------
@@ -806,6 +889,9 @@ async def edit_event(eid: int, request: Request):
 @app.delete("/api/events/{eid}")
 def delete_event(eid: int):
     with db.connect() as d:
+        e = d.execute("select scene_id, seq from event where id = ?", (eid,)).fetchone()
+        if e:
+            engine.forget_lines(d, e["scene_id"], e["seq"], e["seq"])
         d.execute("delete from example where event_id = ?", (eid,))
         d.execute("delete from feeling where event_id = ?", (eid,))
         d.execute("delete from event where id = ?", (eid,))
@@ -822,6 +908,7 @@ def rewind(eid: int):
             d.execute("delete from example where event_id = ?", (g,))
             d.execute("delete from feeling where event_id = ?", (g,))
         d.execute("delete from event where scene_id = ? and seq >= ?", (e["scene_id"], e["seq"]))
+        engine.forget_lines(d, e["scene_id"], e["seq"])
         # Presence that started in what was taken back is undone; leaving that was taken back is undone.
         d.execute("delete from presence where scene_id = ? and joined_seq >= ?", (e["scene_id"], e["seq"]))
         d.execute("update presence set left_seq = null where scene_id = ? and left_seq >= ?", (e["scene_id"], e["seq"]))

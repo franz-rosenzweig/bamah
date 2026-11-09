@@ -13,9 +13,24 @@
   - **Feelings:** **Track** keeps the feelings map up to date after every line, and **Off** stops it.
   - **Replies per round:** at most how many characters answer one of your lines.
   - **Repetition guard:** notices when a character keeps reaching for the same phrases, and asks them for fresh ones.
-- **Reading:** **Text size**, **Theme** (**Dark**, **Light**, or **Auto** to follow the device), and **Tour**, which starts the guided tour again. These three are kept per device, so a phone and a computer can differ.
+- **Reading:** **Text size**; **Theme**, **Dark**, **Light**, or **Auto** to follow the device, and under it every theme, each with a little picture of how it looks; and **Tour**, which starts the guided tour again. These are kept per device, so a phone and a computer can differ.
 - **Shared journal:** notes for every story, that come to mind when one of their keyphrases comes up.
 - **Data:** **Backup** downloads everything as one file, and **Sign out**.
+
+## Themes
+
+There are 22. Some are plain colours: Bamah's own, Paper, Blue pencil, Nord, Solarized, Gruvbox, Catppuccin, Rosé Pine, Tokyo Night, Dracula, Everforest, E-ink, High contrast and Black. The others are rooms, where the side list and the bars are made of something, there's a faint texture behind the cards, and the headings have their own typeface:
+
+- **Velvet theatre:** a red curtain for a frame, with a gold trim and a spotlight.
+- **Candlelit:** warm and dark, with a glow in one corner.
+- **Film noir:** black and white, light through the blinds, and one red.
+- **Manuscript:** parchment, a leather binding and red initials.
+- **Storybook:** watercolour washes and a cloth-bound cover, or a night sky.
+- **Garden:** dappled light and a hedge, or fireflies at night.
+- **Starship:** a console's grid and glowing readouts.
+- **Gothic:** stone, crimson and gold.
+
+Every one has a dark and a light version, and the text you read stays plain in all of them.
 
 ## Ideas
 

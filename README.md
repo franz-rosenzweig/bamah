@@ -31,19 +31,20 @@ The AI companion apps are good at one character at a time, but they're expensive
 
 ## What it does
 
-- **A guided start:** the first time you open it, a tour walks you through your first story, one step at a time, and waits while you do each one. The same steps, with pictures, are in [Getting started](docs/getting-started.md).
-- **Loose characters:** each one is a sheet in your own words: who they are, their pronouns and how they look, their inner life (what they want, what they fear, what they hide), things they always remember, how they talk, and one instruction that always wins. Stuck on a blank sheet? Type a few words and Bamah drafts the whole thing for you to argue with. See [Characters](docs/characters.md).
-- **What they feel:** every reply starts with the character's private feelings, which you can read and the others can't. Bamah keeps a map of each character's mood and how strongly they feel about each of the others, shows it beside the scene, and feeds it back in, so a slight from two scenes ago is still there. See [Feelings and memory](docs/feelings-and-memory.md).
-- **Scenes with several characters:** set the scene, say who's there, and write as the narrator or as one of your personas, the people you play. The story picks who answers, or you do by tapping a face, and characters can come and go mid-scene. When you're stuck, one button drafts your next line. See [Stories and scenes](docs/scenes.md).
+- **A guided start:** the first time you open it, a card offers a tour that walks you through your first story, one step at a time, and waits while you do each one. The same steps, with pictures, are in [Getting started](docs/getting-started.md).
+- **Loose characters:** each one is a sheet in your own words: who they are, their pronouns and how they look, their inner life (what they want, what they fear, what they hide), things they always remember, how they talk, and one instruction that always wins. Stuck on a blank sheet? Type a few words and Bamah drafts the rest for you to argue with, keeping every word you've already written, down to a sore spot they steer away from. See [Characters](docs/characters.md).
+- **What they feel, and what they show:** every reply starts with the character's private feelings, which you can read and the others can't. Bamah keeps a map of each character's mood, how strongly they feel about each of the others and what they let each one see, shows it beside the scene, and feeds it back in, so a slight from two scenes ago is still there, behind a polite face. See [Feelings and memory](docs/feelings-and-memory.md).
+- **Scenes with several characters:** set the scene, say who's there, give it a secret aim if you like, and write as the narrator or as one of your personas, the people you play. The story picks who answers, fairly, and says why, or you do by tapping a face, and characters can come and go mid-scene. When you're stuck, one button drafts your next line. See [Stories and scenes](docs/scenes.md).
 - **They only know what they saw:** every line records who was in the room. Move two characters to a new scene and their memories go with them. A story can also be set so everyone knows everything.
-- **Memory in layers:** the scene word for word as far back as the short-term size allows, then memories written from each character's own point of view, running notes on what they've come to know, and journal entries that come to mind when one of their keyphrases comes up. All of it can be read, edited and pinned.
+- **Memory in layers:** the scene word for word as far back as the short-term size allows, then memories written from each character's own point of view, running notes on what they've come to know, and journal entries that come to mind when one of their keyphrases comes up. Memory keeps itself tidy: a fact that changes replaces the old one, what keeps coming up stays warm while the rest fades, and taking back lines takes back what was remembered from them. All of it can be read, edited and pinned.
+- **Journal entries from your pages:** bring in your notes and Bamah splits them into entries, checks them for a name spelled two ways or facts that disagree, and lets you look them over first. Or pick lines in a scene and make an entry from them.
 - **"What if" scenes:** try a confrontation or a confession that nobody remembers afterwards, and make it count if you like how it went.
 - **Corrections that stick:** a thumbs down on a line that's out of character takes a one-line note, like "she'd never apologize first", which goes on the character's sheet for good, and the line is taken again. A thumbs up keeps a line as an example of how they sound.
 - **Every take kept:** take a line again, try it with another model, continue it, edit it, or rewind the scene to any point. A repetition guard notices when a character keeps reaching for the same phrases.
 - **Faces:** a portrait library, with any picture you upload or generate from a character's appearance, photographic, painted or anime. See [Portraits](docs/portraits.md).
 - **Bring in your pages:** drop in a chapter, an outline or a backstory (Word, PDF or text), into a scene where everyone there reads it, onto one character, or into the story's journal.
 - **Ideas:** star a moment and add a note, and it goes on the Ideas list. A story exports to Markdown.
-- **Easy on the eyes:** dark by default, light if you like, and the text size per device, for long reading sessions. It works on a phone too.
+- **Easy on the eyes:** 22 themes, each dark or light, from plain colours to rooms like a velvet theatre, a candlelit study or a starship, and a picture of your own behind any scene. The text size is per device, for long reading sessions, and it works on a phone too.
 - **Any model:** OpenRouter (hundreds of models), OpenAI, Claude, Gemini, Ollama on your own computer, anything else that speaks the OpenAI format, or your own ChatGPT plan through "Sign in with ChatGPT". Each story and each character can use a different one, and on OpenRouter you choose how much they think before they answer. See [Models](docs/models.md).
 
 ## Screenshots
@@ -71,7 +72,7 @@ cp .env.example .env              # set a password if anyone else can reach it
 docker compose up -d --build      # then open http://127.0.0.1:8465
 ```
 
-The tour starts by itself and begins with adding a model. On your own computer, Ollama works with no key at all (Bamah reaches it at `host.docker.internal:11434`).
+The tour, offered in the corner the first time, begins with adding a model. On your own computer, Ollama works with no key at all (Bamah reaches it at `host.docker.internal:11434`).
 
 **ChatGPT plan:** Settings, then Continue with ChatGPT. OpenAI only sends you back to `http://127.0.0.1:<port>`, so on your own computer the sign-in finishes by itself. On a server, the ChatGPT tab ends on a page that doesn't load, and you paste that page's address into Bamah, once.
 

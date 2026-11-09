@@ -107,8 +107,8 @@ def _ok(r: httpx.Response) -> dict:
     return r.json()
 
 
-def save(data: bytes, cid: int | None) -> str:
+def save(data: bytes, cid: int | None, folder: str = "avatars") -> str:
     kind = "png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "webp" if data[8:12] == b"WEBP" else "jpg"
     name = f"{cid or 'p'}-{secrets.token_hex(5)}.{kind}"
-    config.path("avatars", name).write_bytes(data)
+    config.path(folder, name).write_bytes(data)
     return name

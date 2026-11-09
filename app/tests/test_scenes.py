@@ -134,7 +134,7 @@ def test_feelings_are_tracked_and_fed_back(app):
     assert app.get(f"/api/scenes/{sc}").json()["feelings"][str(mara)]["strength"][str(ben)] == 4
     turn(app, sc, mara)
     tail = app.fake.prompts_for("Mara")[-1]["messages"][-1]["content"]
-    assert "How Mara feels right now: prickly" in tail and "About Ben Ortiz: doesn't trust them" in tail
+    assert "How Mara feels right now: prickly" in tail and "About Ben Ortiz: feels doesn't trust them; shows polite" in tail
 
 
 def test_journal_entries_come_to_mind(app):

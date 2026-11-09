@@ -40,12 +40,12 @@ const P = {
   quill: '<path d="M20 4c-8 0-13 5-14 12l-2 4M8 14c3 0 6-1 8-4"/>',
 };
 
-// Reading comfort: text size and theme are per device. Dark unless she picks Light or Auto.
+// Reading comfort: text size and theme are per device (the theme's colours are themes.js's).
 function applyLook() {
-  let size = '1', theme = 'dark';
-  try { size = localStorage.getItem('bamah.size') || '1'; theme = localStorage.getItem('bamah.theme') || 'dark'; } catch (e) {}
+  let size = '1';
+  try { size = localStorage.getItem('bamah.size') || '1'; } catch (e) {}
   document.documentElement.style.setProperty('--scale', size);
-  document.documentElement.setAttribute('data-theme', theme);
+  window.BamahThemes?.apply();
 }
 applyLook();
 
@@ -106,11 +106,10 @@ function debounce(fn, ms = 600) {
 // doesn't swallow the edit to the box before it.
 function saver(url, ms = 600) {
   let pending = {}, t;
-  return (patch) => {
-    Object.assign(pending, patch);
-    clearTimeout(t);
-    t = setTimeout(() => { const p = pending; pending = {}; PATCH(url, p); }, ms);
-  };
+  const send = () => { clearTimeout(t); const p = pending; pending = {}; return Object.keys(p).length ? PATCH(url, p) : Promise.resolve(); };
+  const save = (patch) => { Object.assign(pending, patch); clearTimeout(t); t = setTimeout(send, ms); };
+  save.flush = send;          // send what's waiting now
+  return save;
 }
 
 function toast(text) {
@@ -426,6 +425,7 @@ async function newSceneSheet(s, from, opts = {}) {
   sheet((box, close) => {
     const title = h('input', {placeholder: 'Title'});
     const setting = h('textarea', {class: 'prose'});
+    const aim = h('textarea', {class: 'prose', rows: 2});
     const chips = h('div', {class: 'chips'});
     const pool = from ? all.filter((c) => from.here.includes(c.id)) : [...all].sort((a, b) => inCast.has(b.id) - inCast.has(a.id));
     const draw = () => {
@@ -439,12 +439,13 @@ async function newSceneSheet(s, from, opts = {}) {
     box.append(h('h2', {}, from ? 'Move to a new scene' : 'New scene'),
       h('label', {class: 'field'}, h('span', {}, 'Title'), title),
       h('label', {class: 'field'}, h('span', {}, 'Setting'), setting),
+      h('label', {class: 'field'}, h('span', {}, 'Aim'), aim),
       h('div', {class: 'field'}, h('span', {class: 'lab'}, from ? 'Who goes' : "Who's in it"), chips),
       h('div', {class: 'field'}, wi),
       h('div', {class: 'foot'}, h('button', {class: 'btn', onclick: close}, 'Cancel'),
         h('button', {class: 'btn primary', onclick: async (e) => {
           e.target.disabled = true;
-          const {id} = await POST(`/api/stories/${s.id}/scenes`, {title: title.value, setting: setting.value,
+          const {id} = await POST(`/api/stories/${s.id}/scenes`, {title: title.value, setting: setting.value, aim: aim.value,
             characters: [...chosen], from_scene: from?.id, whatif});
           close();
           location.hash = `#/scene/${id}`;
@@ -464,8 +465,10 @@ function feelCard(c, f, names, people, {big = false} = {}) {
   for (const [k, how] of Object.entries(f.toward || {})) {
     const other = people[k] || {name: names[k] || k};
     const much = (f.strength || {})[k];
+    const shows = (f.shows || {})[k];
     card.append(h('div', {class: 'tw'}, h('div', {class: 'row'}, avatar(other, 'xs'), h('b', {}, first(other.name)), h('span', {class: 'grow'}, how)),
-      much ? h('div', {class: 'bar'}, h('i', {style: `width:${much * 20}%`})) : null));
+      much ? h('div', {class: 'bar'}, h('i', {style: `width:${much * 20}%`})) : null,
+      shows ? h('div', {class: 'row shows'}, h('span', {class: 'k'}, 'Shows'), h('span', {class: 'grow'}, shows)) : null));
   }
   return card;
 }
@@ -589,8 +592,8 @@ function pickFile(accept = '.txt,.md,.docx,.pdf') {
   });
 }
 
-async function bringIn(target, targetId) {
-  const file = await pickFile();
+async function bringIn(target, targetId, picked = null) {
+  const file = picked || await pickFile();
   if (!file) return null;
   const fd = new FormData();
   fd.append('file', file);
@@ -604,9 +607,66 @@ async function bringIn(target, targetId) {
   return out;
 }
 
+// A file for a journal: split into entries she looks over first, or kept whole as one.
+async function journalFile(scope, target, reload) {
+  const file = await pickFile();
+  if (!file) return;
+  menu([
+    ['Split into entries', () => splitSheet(file, scope, reload)],
+    ['As one entry', async () => { if (await bringIn(...target, file)) reload(); }],
+  ]);
+}
+
+const ISSUE = {duplicate: 'Same keyphrase', spelling: 'Two spellings', contradiction: 'Contradiction'};
+
+async function splitSheet(file, scope, reload) {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('story_id', String(scope.story_id || 0));
+  toast('Reading…');
+  const r = await fetch('/api/journal/split', {method: 'POST', body: fd});
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) return toast(r.status === 415 ? 'Word, PDF or text only' : ERR[out.error] || 'No entries');
+  let entries = out.entries.map((e, i) => ({...e, n: i}));
+  let issues = out.issues;
+  sheet((box, close) => {
+    const list = h('div', {class: 'notes'}), checks = h('div', {class: 'checks'});
+    const addBtn = h('button', {class: 'btn primary', onclick: async () => {
+      await POST('/api/journal/batch', {...scope, entries}); close(); toast(`${entries.length} added`); reload();
+    }});
+    const byN = (n) => entries.find((e) => e.n === n);
+    const settle = (i) => { issues = issues.filter((_, j) => j !== i); draw(); };
+    const draw = () => {
+      issues = issues.map((x) => ({...x, entries: x.entries.filter(byN)})).filter((x) => x.entries.length > (x.kind === 'contradiction' ? 0 : 1));
+      checks.replaceChildren(...issues.map((x, i) => h('div', {class: 'card check'},
+        h('div', {class: 'meta'}, h('span', {class: 'badge'}, ISSUE[x.kind]), ' ', x.entries.map((n) => byN(n).title).join(' · ')),
+        x.note ? h('div', {class: 'small'}, x.note) : null,
+        h('div', {class: 'row', style: 'justify-content:flex-end;margin-top:6px'},
+          x.entries.length > 1 ? h('button', {class: 'btn small', onclick: () => { entries = entries.filter((e) => e.n === x.entries[0] || !x.entries.includes(e.n)); settle(i); }}, 'Keep') : null,
+          x.entries.length > 1 ? h('button', {class: 'btn small', onclick: () => {
+            const [first, ...rest] = x.entries.map(byN);
+            first.text = [first.text, ...rest.map((e) => e.text)].join('\n\n');
+            first.keys = [...new Set([first, ...rest].flatMap((e) => e.keys.split(',')).map((k) => k.trim()).filter(Boolean))].join(', ');
+            entries = entries.filter((e) => !rest.includes(e));
+            settle(i);
+          }}, 'Merge') : null,
+          h('button', {class: 'btn small', onclick: () => settle(i)}, x.entries.length > 1 ? 'Keep both' : 'Keep')))));
+      list.replaceChildren(...entries.map((e) => h('div', {class: 'note'},
+        h('div', {class: 'grow', style: 'padding-top:6px'}, h('div', {}, h('b', {}, e.title), e.keys ? h('span', {class: 'meta'}, '  ' + e.keys) : null),
+          h('div', {class: 'text', style: 'padding-top:2px'}, e.text)),
+        ibtn('trash', () => { entries = entries.filter((x) => x !== e); draw(); }, {title: 'Remove'}))));
+      addBtn.textContent = `Add ${entries.length}`;
+      addBtn.disabled = !entries.length;
+    };
+    draw();
+    box.append(h('h2', {}, file.name), checks, list,
+      h('div', {class: 'foot'}, h('button', {class: 'btn', onclick: close}, 'Cancel'), addBtn));
+  });
+}
+
 function journalEditor(entries, scope, reload) {
   const box = h('div', {class: 'notes'});
-  const fileTarget = scope.character_id ? ['character', scope.character_id] : scope.story_id ? ['story', scope.story_id] : null;
+  const fileTarget = scope.character_id ? ['character', scope.character_id] : scope.story_id ? ['story', scope.story_id] : ['shared', 0];
   for (const j of entries) {
     const view = h('div', {class: 'grow', style: 'padding-top:6px'}, h('div', {}, h('b', {}, j.title || ''), j.keys ? h('span', {class: 'meta'}, '  ' + j.keys) : null),
       h('div', {class: 'text', style: 'padding-top:2px'}, j.text));
@@ -625,7 +685,7 @@ function journalEditor(entries, scope, reload) {
   const t = h('input', {placeholder: 'Title'}), k = h('input', {placeholder: 'Keyphrases'}), x = h('textarea', {placeholder: 'Entry'});
   box.append(h('div', {class: 'card'}, t, h('div', {style: 'height:6px'}), k, h('div', {style: 'height:6px'}), x,
     h('div', {class: 'row', style: 'justify-content:flex-end;margin-top:8px'},
-      fileTarget ? h('button', {class: 'btn small quiet', onclick: async () => { if (await bringIn(...fileTarget)) reload(); }}, icon('clip'), 'File') : null,
+      h('button', {class: 'btn small quiet', onclick: () => journalFile(scope, fileTarget, reload)}, icon('clip'), 'File'),
       h('button', {class: 'btn small primary', onclick: async () => {
         if (!x.value.trim()) return;
         await POST('/api/journal', {...scope, title: t.value, keys: k.value, text: x.value});
@@ -696,7 +756,16 @@ async function sceneView(id) {
   const dock = h('div', {class: 'dock'}, h('div', {class: 'dock-in'}, speakers,
     h('div', {class: 'composer', 'data-tour': 'composer'}, input, h('div', {class: 'cbar'}, attach, asBtn, h('span', {class: 'grow'}), wand, send))));
   const side = h('aside', {class: 'side', 'data-tour': 'feelings'});
-  main.append(h('div', {class: 'scene'}, h('div', {class: 'stage'}, head, log, dock), side));
+  const bgFile = h('input', {type: 'file', accept: 'image/*', class: 'hidden', onchange: async () => {
+    if (!bgFile.files[0]) return;
+    const fd = new FormData();
+    fd.append('file', bgFile.files[0]);
+    const r = await fetch(`/api/scenes/${id}/background`, {method: 'POST', body: fd});
+    if (!r.ok) toast(r.status === 413 ? 'Too big' : 'Not a picture');
+    reload();
+  }});
+  const stageBg = sc.background ? h('div', {class: 'stage-bg'}, h('img', {src: `/backgrounds/${encodeURIComponent(sc.background)}`, alt: ''})) : null;
+  main.append(bgFile, h('div', {class: 'scene'}, h('div', {class: `stage ${sc.background ? 'has-bg' : ''}`}, stageBg, head, log, dock), side));
 
   input.addEventListener('input', grow);
   input.addEventListener('keydown', (e) => {
@@ -804,7 +873,9 @@ async function sceneView(id) {
     textEl.innerHTML = prose(e.content);
     const innerText = h('span', {}, e.inner || '');
     const innerEl = h('div', {class: `inner ${showInner && e.inner ? '' : 'hidden'}`}, icon('heart'), innerText);
-    body.append(h('div', {class: 'who'}, c.name, e.model_label ? h('span', {class: 'm'}, shortModel(e.model_label)) : null),
+    const why = e.reason ? h('span', {class: 'why hidden'}, e.reason) : null;
+    body.append(h('div', {class: 'who'}, c.name, e.model_label ? h('span', {class: 'm'}, shortModel(e.model_label)) : null,
+      e.reason ? h('button', {class: 'whyi', type: 'button', title: e.reason, 'aria-label': 'Why', onclick: () => why.classList.toggle('hidden')}, 'i') : null, why),
       innerEl, h('div', {class: 'bubble'}, textEl));
     body.addEventListener('click', (ev) => { if (!ev.target.closest('button,textarea,input,a')) el.classList.toggle('open'); });
     if (!e.temp) {
@@ -1040,14 +1111,59 @@ async function sceneView(id) {
     });
   }
 
+  // Pick lines, and the helper makes a journal entry for the story from them (or says there's nothing to keep).
+  function pickLines() {
+    if (dock.querySelector('.pickbar')) return;
+    const picked = new Set();
+    const count = h('span', {class: 'grow muted small'});
+    const make = h('button', {class: 'btn primary small', disabled: true}, 'Make entry');
+    const onClick = (ev) => {
+      const el = ev.target.closest('[data-id]');
+      if (!el || !logIn.contains(el) || el.dataset.id === 'temp') return;
+      ev.preventDefault(); ev.stopPropagation();
+      const eid = +el.dataset.id;
+      picked.has(eid) ? picked.delete(eid) : picked.add(eid);
+      el.classList.toggle('picked', picked.has(eid));
+      count.textContent = picked.size ? String(picked.size) : '';
+      make.disabled = !picked.size;
+    };
+    const done = () => {
+      logIn.classList.remove('picking');
+      logIn.querySelectorAll('.picked').forEach((el) => el.classList.remove('picked'));
+      logIn.removeEventListener('click', onClick, true);
+      bar.remove();
+    };
+    const bar = h('div', {class: 'pickbar'}, h('button', {class: 'btn small', onclick: done}, 'Cancel'), count, make);
+    make.onclick = async () => {
+      make.disabled = true; make.textContent = 'Writing…';
+      try {
+        const out = await POST(`/api/scenes/${id}/journal-entry`, {event_ids: [...picked]});
+        done();
+        if (!out.entry) return toast('Nothing worth keeping');
+        sheet((box, close) => {
+          const t = h('input', {value: out.entry.title}), k = h('input', {value: out.entry.keys}), x = h('textarea', {class: 'prose', rows: 6, value: out.entry.text});
+          box.append(h('h2', {}, 'Journal entry'), field('Title', t), field('Keyphrases', k), field('Entry', x),
+            h('div', {class: 'foot'}, h('button', {class: 'btn', onclick: close}, 'Cancel'),
+              h('button', {class: 'btn primary', onclick: async () => {
+                await POST('/api/journal', {story_id: sc.story.id, title: t.value, keys: k.value, text: x.value}); close(); toast('Added');
+              }}, 'Add')));
+        });
+      } catch (e) { toast(ERR[e.data?.error] || 'No entry'); make.disabled = false; make.textContent = 'Make entry'; }
+    };
+    logIn.classList.add('picking');
+    logIn.addEventListener('click', onClick, true);
+    dock.prepend(bar);
+  }
+
   function editScene() {
     sheet((box, close) => {
       const title = h('input', {value: sc.title});
       const setting = h('textarea', {class: 'prose', value: sc.setting, rows: 5});
-      box.append(h('h2', {}, 'Scene'), field('Title', title), field('Setting', setting), h('div', {class: 'foot'},
+      const aim = h('textarea', {class: 'prose', value: sc.aim || '', rows: 2});
+      box.append(h('h2', {}, 'Scene'), field('Title', title), field('Setting', setting), field('Aim', aim), h('div', {class: 'foot'},
         h('button', {class: 'btn', onclick: close}, 'Cancel'),
         h('button', {class: 'btn primary', onclick: async () => {
-          await PATCH(`/api/scenes/${id}`, {title: title.value, setting: setting.value}); close(); reload();
+          await PATCH(`/api/scenes/${id}`, {title: title.value, setting: setting.value, aim: aim.value}); close(); reload();
         }}, 'Save')));
     });
   }
@@ -1083,6 +1199,9 @@ async function sceneView(id) {
       ["Who's here", presenceSheet],
       ['What if', () => newSceneSheet(story || {id: sc.story.id, cast: sc.cast}, null, {whatif: true, with: sc.here})],
       sc.here.length ? ['Move to a new scene', () => newSceneSheet({id: sc.story.id, cast: sc.cast}, {id, here: sc.here})] : null,
+      ['Make a journal entry', pickLines],
+      ['Background', () => bgFile.click()],
+      sc.background ? ['Remove background', async () => { await DEL(`/api/scenes/${id}/background`); reload(); }] : null,
       [showInner ? 'Hide what they feel' : 'Show what they feel', () => {
         showInner = !showInner; localStorage.setItem('bamah.inner', showInner ? '1' : '0'); drawLog();
       }],
@@ -1206,13 +1325,15 @@ async function librarySheet(c, done) {
   }, 'wide');
 }
 
-function noteList(items, {text = (x) => x.text, onsave, ondelete, onpin, meta}) {
+function noteList(items, {text = (x) => x.text, onsave, ondelete, onpin, meta, cls, tag}) {
   const box = h('div', {class: 'notes'});
   for (const it of items) {
-    const note = h('div', {class: `note ${it.pinned ? 'pinned' : ''}`});
+    const note = h('div', {class: `note ${it.pinned ? 'pinned' : ''} ${cls ? cls(it) : ''}`});
     const draw = () => {
       note.innerHTML = '';
-      add(note, h('div', {class: 'grow'}, meta ? h('div', {class: 'meta'}, meta(it)) : null, h('div', {class: 'text'}, text(it))),
+      const t = tag ? tag(it) : '';
+      add(note, h('div', {class: 'grow'}, meta || t ? h('div', {class: 'meta'}, meta ? meta(it) : '', t ? h('span', {class: 'badge'}, t) : null) : null,
+        h('div', {class: 'text'}, text(it))),
         onpin ? ibtn('pin', () => onpin(it), {class: `icon ${it.pinned ? 'on' : ''}`, title: 'Pin'}) : null,
         onsave ? ibtn('edit', () => {
           const t = h('textarea', {value: text(it)});
@@ -1267,7 +1388,8 @@ async function characterView(id) {
   main.append(body);
   const col = h('div', {class: 'ccol'});
   inner.append(col);
-  const ta = (key, rows, cls = 'prose') => h('textarea', {class: cls, rows, value: c[key] || '', oninput: (e) => save({[key]: e.target.value})});
+  const boxes = {};          // the sheet's boxes as they are now, for Draft
+  const ta = (key, rows, cls = 'prose') => (boxes[key] = h('textarea', {class: cls, rows, value: c[key] || '', oninput: (e) => save({[key]: e.target.value})}));
 
   // The portrait and its buttons; shown beside the personality and on its own page.
   const portraitBlock = () => {
@@ -1293,13 +1415,20 @@ async function characterView(id) {
 
   if (sec === 'personality') {
     const words = h('input', {placeholder: 'A few words', 'aria-label': 'A few words'});
+    // Draft keeps every word she has written and fills in the rest; only when every box is full does it offer to start over.
     const draftBtn = h('button', {class: 'btn primary', onclick: async () => {
-      if (!words.value.trim()) return words.focus();
-      const keys = ['pronouns', 'appearance', 'personality', 'inner_life', 'voice', 'key_memories'];
-      if (keys.some((k) => (c[k] || '').trim()) && !await ask('Replace what’s there?', 'Replace', false)) return;
+      const keys = ['pronouns', 'appearance', 'personality', 'inner_life', 'sore_spot', 'voice', 'key_memories'];
+      const filled = keys.filter((k) => (boxes[k]?.value ?? c[k] ?? '').trim());
+      if (!words.value.trim() && !filled.length) return words.focus();
+      let replace = false;
+      if (filled.length === keys.length) {
+        if (!await ask('Replace what’s there?', 'Replace', false)) return;
+        replace = true;
+      }
       draftBtn.disabled = true; draftBtn.textContent = 'Drafting…';
       try {
-        const out = await POST(`/api/characters/${id}/draft`, {words: words.value});
+        await save.flush();
+        const out = await POST(`/api/characters/${id}/draft`, {words: words.value, replace});
         await PATCH(`/api/characters/${id}`, out);
         reload();
       } catch (e) { toast(ERR[e.data?.error] || 'No draft'); draftBtn.disabled = false; draftBtn.textContent = 'Draft'; }
@@ -1314,12 +1443,13 @@ async function characterView(id) {
       h('div', {class: 'draftbar', 'data-tour': 'draft'}, h('label', {}, icon('wand'), words), draftBtn),
       add(h('div', {class: 'group'}),
         mark(line('Name', name), 'name'),
-        line('Pronouns', h('input', {value: c.pronouns || '', 'aria-label': 'Pronouns', oninput: (e) => save({pronouns: e.target.value})})),
+        line('Pronouns', boxes.pronouns = h('input', {value: c.pronouns || '', 'aria-label': 'Pronouns', oninput: (e) => save({pronouns: e.target.value})})),
         line('Speaks as', seg([['', 'Story’s'], ['first', 'I'], ['third', 'She / he / they']], c.person || '', (v) => PATCH(`/api/characters/${id}`, {person: v || null}))),
         line('Style', seg([['', 'Story’s'], ...STYLES], c.style || '', (v) => PATCH(`/api/characters/${id}`, {style: v || null}))),
         personas.length ? line('Usually with', tied) : null),
       mark(fieldCard('Who they are', ta('personality', 5)), 'who'),
       fieldCard('Inner life', ta('inner_life', 3)),
+      fieldCard('Sore spot', ta('sore_spot', 2)),
       fieldCard('How they talk', ta('voice', 3)),
       fieldCard('Always remembers', ta('key_memories', 3, '')),
       fieldCard('Always', ta('directive', 2, '')));
@@ -1352,7 +1482,9 @@ async function characterView(id) {
       const learned = h('textarea', {rows: 8, value: s.learned, oninput: debounce(() => PUT(`/api/learned/${s.id}/${id}`, {text: learned.value}))});
       col.append(h('h2', {}, h('a', {href: `#/story/${s.id}`}, s.title)), fieldCard('Come to know', learned),
         h('h3', {}, 'Memories'),
-        noteList(s.memories, {meta: (m) => m.scene_title || '', onpin: async (m) => { await PATCH(`/api/memories/${m.id}`, {pinned: m.pinned ? 0 : 1}); reload(); },
+        noteList(s.memories, {meta: (m) => m.scene_title || '', tag: (m) => (m.replaced_by ? 'Replaced' : ''),
+          cls: (m) => (m.replaced_by ? 'replaced' : !m.pinned && (m.heat ?? 0.6) < 0.15 ? 'faded' : ''),
+          onpin: async (m) => { await PATCH(`/api/memories/${m.id}`, {pinned: m.pinned ? 0 : 1}); reload(); },
           onsave: (m, t) => PATCH(`/api/memories/${m.id}`, {text: t}), ondelete: (m) => DEL(`/api/memories/${m.id}`)}),
         adder('Memory', async (t) => { await POST('/api/memories', {character_id: id, story_id: s.id, text: t}); reload(); }));
     }
@@ -1366,7 +1498,8 @@ async function characterView(id) {
         const arc = h('div', {class: 'arc hidden'}, s.feelings.slice(1).map((f) => h('div', {},
           h('div', {class: 'when'}, f.created_at.slice(0, 16).replace('T', ' ')),
           h('div', {style: 'font:italic 15px/1.45 var(--prose);margin:2px 0'}, [f.word, f.mood].filter(Boolean).join(' · ')),
-          Object.entries(f.toward || {}).map(([k, how]) => h('div', {class: 'small'}, h('b', {}, c.names[k] || k), ' ', how)))));
+          Object.entries(f.toward || {}).map(([k, how]) => h('div', {class: 'small'}, h('b', {}, c.names[k] || k), ' ', how,
+            (f.shows || {})[k] ? h('span', {class: 'shown'}, ' · ', (f.shows || {})[k]) : null)))));
         col.append(h('div', {}, h('button', {class: 'btn quiet small', onclick: () => arc.classList.toggle('hidden')}, 'Earlier')), arc);
       }
     }
@@ -1466,9 +1599,29 @@ async function settingsView() {
 
   const local = (k, fallback) => { try { return localStorage.getItem(k) || fallback; } catch (e) { return fallback; } };
   const keep = (k) => (v) => { try { localStorage.setItem(k, v); } catch (e) {} applyLook(); };
+  const TH = window.BamahThemes;
+  const looks = h('div', {class: 'looks', 'data-tour': 'looks'});
+  const drawLooks = () => {
+    const cur = TH.get(), dark = TH.isDark(cur.mode);
+    looks.replaceChildren(...TH.FAMILIES.map((f) => {
+      const v = TH.vars(dark ? f.dark : f.light, dark);
+      const frame = v['--frame'] || v['--rail'];
+      return h('button', {class: `look ${f.id === cur.look ? 'on' : ''}`, type: 'button', 'aria-pressed': String(f.id === cur.look),
+        onclick: () => { TH.set({look: f.id}); drawLooks(); }},
+        h('span', {class: 'pv', style: `background:${v['--bg']}`},
+          h('span', {class: 'r', style: `background:${frame}`}),
+          h('span', {class: 'm'},
+            h('span', {class: 'h', style: `background:${v['--ink']}`}),
+            h('span', {class: 'c', style: `background:${v['--card']};border:1px solid ${v['--line']}`}, h('i', {style: `background:${v['--muted']}`})),
+            h('span', {class: 'b', style: `background:${v['--accent-fill']}`}))),
+        f.name);
+    }));
+  };
+  drawLooks();
   wrap.append(h('h3', {}, 'Reading'), h('div', {class: 'group'},
     line('Text size', seg([['0.9', 13], ['1', 15], ['1.12', 18], ['1.25', 21]].map(([v, px]) => [v, h('span', {style: `font:600 ${px}px var(--prose)`}, 'A')]), local('bamah.size', '1'), keep('bamah.size'))),
-    line('Theme', seg([['dark', 'Dark'], ['light', 'Light'], ['auto', 'Auto']], local('bamah.theme', 'dark'), keep('bamah.theme'))),
+    line('Theme', seg([['dark', 'Dark'], ['light', 'Light'], ['auto', 'Auto']], TH.get().mode, (v) => { TH.set({mode: v}); drawLooks(); })),
+    looks,
     line('Tour', h('button', {class: 'btn small', onclick: () => tourStart()}, 'Start'))));
 
   wrap.append(h('h3', {}, 'Shared journal'));
@@ -1582,7 +1735,10 @@ const STEPS = [
 
 function tourSave() { try { localStorage.setItem(TOUR, JSON.stringify(T.state)); } catch (e) {} }
 
-function tourStart() {
+function tourStart(from = 0) {
+  document.querySelector('.tour-invite')?.remove();
+  try { localStorage.setItem(INVITE, 'started'); } catch (e) {}
+  if (from) { T.state = {i: 0}; return tourGo(from); }
   T.state = {i: 0};
   tourSave();
   tourShow();
@@ -1590,7 +1746,7 @@ function tourStart() {
 
 function tourEnd() {
   T.state = null;
-  try { localStorage.removeItem(TOUR); localStorage.setItem('bamah.tour.seen', '1'); } catch (e) {}
+  try { localStorage.removeItem(TOUR); } catch (e) {}
   clearInterval(T.tick);
   T.root?.remove();
   T.root = null;
@@ -1691,16 +1847,36 @@ function placeCard(r) {
   c.style.top = `${top}px`;
 }
 
-// On the first visit to an empty Bamah, or to carry on where she left off.
-async function tourMaybe() {
+// Carry on where she left off; otherwise, on a device that hasn't answered it yet, a card in the corner
+// that offers the tour. Start skips the welcome card, since this one has said it.
+const INVITE = 'bamah.tour.invite';
+
+function tourMaybe() {
   try { T.state = JSON.parse(localStorage.getItem(TOUR) || 'null'); } catch (e) { T.state = null; }
   if (T.state) return tourShow();
-  let seen = null;
-  try { seen = localStorage.getItem('bamah.tour.seen'); } catch (e) {}
-  if (seen) return;
-  try {
-    if (!(await GET('/api/stories')).length) tourStart();
-  } catch (e) {}
+  let answered = null;
+  try { answered = localStorage.getItem(INVITE); } catch (e) {}
+  if (!answered) tourInvite();
+}
+
+function tourInvite() {
+  const answer = (how) => { try { localStorage.setItem(INVITE, how); } catch (e) {} };
+  const card = h('div', {class: 'tour-invite', role: 'dialog', 'aria-label': 'Tour'});
+  const close = () => card.remove();
+  add(card,
+    h('div', {class: 'tour-t'}, 'Take the tour?'),
+    h('div', {class: 'tour-x'}, 'A few minutes, one step at a time: two characters, a story, and a scene with them in it.'),
+    h('div', {class: 'tour-b'},
+      h('button', {class: 'btn quiet small', onclick: () => {
+        answer('skipped');
+        card.replaceChildren(h('div', {class: 'row'},
+          h('div', {class: 'tour-x grow'}, 'You can take it any time from Settings › Tour.'),
+          ibtn('close', close, {title: 'Close'})));
+        setTimeout(close, 8000);
+      }}, 'Skip'),
+      h('span', {class: 'grow'}),
+      h('button', {class: 'btn primary small', onclick: () => { answer('started'); close(); tourStart(1); }}, 'Start')));
+  document.body.append(card);
 }
 
 route().then(tourMaybe);

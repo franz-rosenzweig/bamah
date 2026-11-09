@@ -37,18 +37,22 @@ PEOPLE = {
     "Mara": {"pronouns": "she/her", "appearance": "Red hair she cuts herself, badly, on purpose. Flour on her sleeves most days.",
              "personality": "Mara runs the kitchen her mother left her, and runs it like a ship. She is funny in a dry way that people mistake for coldness. She notices everything and says a tenth of it.",
              "inner_life": "Afraid she has become her mother. Proud of it, too.",
+             "sore_spot": "Her mother's recipes. She changes the subject by giving someone a job to do.",
              "voice": "Short sentences. Swears in Spanish when she's tired. Never says sorry; says \"fine\" instead.",
              "key_memories": ["Burned a letter from Ben without reading it.", "Taught Cleo to make bread the winter their mother was sick."]},
     "Ben": {"pronouns": "he/him", "appearance": "Tall. Expensive shoes, scuffed. A coat that costs more than the table.",
             "personality": "Ben left the family kitchen at nineteen and came back charming. He talks his way out of everything and into most things, and he can't stand a silence.",
             "inner_life": "Ashamed of the money and of how he got it. Wants Mara to need him, once.",
+            "sore_spot": "Where the money came from. He makes a joke and pays for something.",
             "voice": "Easy, warm, a joke ready. Says \"come on\" when he's losing.",
             "key_memories": ["Wrote the letter from Paris and never meant to send it."]},
     "Cleo": {"pronouns": "she/her", "appearance": "Small, quick, hair always pinned up wrong.",
              "personality": "The youngest. Cleo keeps the peace by noticing first, and rehearses every hard conversation in the mirror.",
-             "inner_life": "Thinks she's the reason her brother and sister fight.", "voice": "Questions instead of answers."},
+             "inner_life": "Thinks she's the reason her brother and sister fight.", "voice": "Questions instead of answers.",
+             "sore_spot": "Being the youngest. She goes very quiet and very polite."},
     "Odile": {"pronouns": "she/her", "appearance": "Pearls at breakfast.", "personality": "Their mother's sister. Hosts everyone, trusts no one.",
-              "inner_life": "Knows what's in the letter.", "voice": "Formal, and kind only in French."},
+              "inner_life": "Knows what's in the letter.", "voice": "Formal, and kind only in French.",
+              "sore_spot": "Paris. She switches to French and asks about the weather."},
 }
 FULL = {"Mara": "Mara Ortiz", "Ben": "Ben Ortiz", "Cleo": "Cleo Ortiz", "Odile": "Aunt Odile"}
 WORDS = {"Mara": "proud, funny, runs her late mother's kitchen, never apologizes first",
@@ -74,11 +78,15 @@ LINES = {
     "Odile": [("They think I don't know. Children.", "*I don't take off my gloves.* Bonsoir. Somebody has been crying in this kitchen.")],
 }
 
-FEEL = {
-    "Mara": ("Coiled", "Tired of covering for him", {"Ben": ("Furious. Wants him to say it.", 5), "Cleo": ("Protective", 3), "Odile": ("Wary respect", 2)}),
-    "Ben": ("Cornered", "Performing calm", {"Mara": ("Afraid of her. Respects her.", 4), "Cleo": ("Guilty tenderness", 3), "Odile": ("Avoiding her", 2)}),
-    "Cleo": ("Anxious", "Keeping the peace", {"Mara": ("Wants her approval", 3), "Ben": ("Adores him", 4), "Odile": ("Trusts her", 3)}),
-    "Odile": ("Watchful", "Waiting for someone to slip", {"Mara": ("Sees herself in her", 3), "Ben": ("Disappointed", 4), "Cleo": ("Fond", 3)}),
+FEEL = {   # word, mood, {who: (how they feel, how strongly, what they show)}
+    "Mara": ("Coiled", "Tired of covering for him", {"Ben": ("Furious. Wants him to say it.", 5, "Cool, clipped manners"),
+                                                      "Cleo": ("Protective", 3, "Brisk, bossy"), "Odile": ("Wary respect", 2, "Perfect manners")}),
+    "Ben": ("Cornered", "Performing calm", {"Mara": ("Afraid of her. Respects her.", 4, "Easy jokes"),
+                                            "Cleo": ("Guilty tenderness", 3, "Big-brother cheer"), "Odile": ("Avoiding her", 2, "Charm, from across the room")}),
+    "Cleo": ("Anxious", "Keeping the peace", {"Mara": ("Wants her approval", 3, "Agrees with everything"),
+                                              "Ben": ("Adores him", 4, "All of it"), "Odile": ("Trusts her", 3, "Openly")}),
+    "Odile": ("Watchful", "Waiting for someone to slip", {"Mara": ("Sees herself in her", 3, "Nothing at all"),
+                                                           "Ben": ("Disappointed", 4, "Gracious, icy"), "Cleo": ("Fond", 3, "Warmth")}),
 }
 
 NARRATOR = "Ben comes in at nine, shaking rain off a coat that cost more than the table."
@@ -116,6 +124,16 @@ def stand_in():
             out = json.dumps(PEOPLE[who])
         elif system.startswith("You help a novelist keep a scene moving"):
             out = "The phone on the wall rings, and nobody moves to answer it."
+        elif system.startswith("You help a novelist keep notes"):
+            out = json.dumps({"title": "The bridge", "keys": ["bridge", "traffic", "late"],
+                              "text": "Ben says the bridge was closed for an hour. Mara drove it at eight and it was open. He was somewhere else."})
+        elif system.startswith("You help a novelist turn her notes"):
+            paras = [p.strip() for p in last.split("\n\n") if p.strip()]
+            out = json.dumps({"entries": [{"title": p.split(".")[0][:40], "keys": [w for w in re.findall(r"[A-Z][a-z]+", p)][:3],
+                                           "text": p} for p in paras]})
+        elif system.startswith("You check a novelist's new journal entries"):
+            nums = re.findall(r"^(\d+)\. .*Ortis", last, re.M)
+            out = json.dumps({"issues": [{"kind": "spelling", "entries": [1, int(nums[0])], "note": "Ortiz here, Ortis there."}] if nums else []})
         elif m := re.match(r"You are playing (.+?) in a story", system):
             who = first(m.group(1))
             if "Continue" in last.splitlines()[-1]:
@@ -135,12 +153,15 @@ def stand_in():
             names = [n.strip() for n in (here.group(1).split(",") if here else []) if n.strip()]
             word, mood, toward = FEEL.get(who, ("Quiet", "Watching", {}))
             out = json.dumps({"word": word, "mood": mood,
-                              "toward": {n: {"how": toward[first(n)][0], "strength": toward[first(n)][1]} for n in names if first(n) in toward}})
+                              "toward": {n: {"how": toward[first(n)][0], "strength": toward[first(n)][1], "shows": toward[first(n)][2]}
+                                         for n in names if first(n) in toward}})
         elif system.startswith("You run the turn order"):
-            names = re.findall(r"^- ([^:]+):", last, re.M)
+            rows = re.findall(r"^- (.+?) \(\d+% of the lines so far, ([^)]*)\)", last, re.M)
             spoke = re.search(r"\n\n(.+?) just spoke", last)
-            names = [n for n in names if not spoke or n != spoke.group(1)]
-            out = ", ".join(names[:2]) or "NOBODY"
+            rows = [(n, gap) for n, gap in rows if not spoke or n != spoke.group(1)]
+            why = lambda gap: ("Hasn't said a word yet" if gap.startswith("hasn't") else
+                               "Just spoke, and isn't done" if gap == "spoke last" else f"Quiet for {gap.split()[0]} lines")
+            out = "\n".join(f"{n} - {why(gap)}" for n, gap in rows[:2]) or "NOBODY"
         else:
             out = "ready"
 
@@ -219,7 +240,8 @@ def walk_the_tour(browser, base: str, model_url: str, out: Path):
         pg.click(".tour-card .tour-next")
 
     pg.goto(base + "/")
-    step("Welcome to Bamah"); snap("01-welcome"); nxt()
+    pg.wait_for_selector(".tour-invite .btn.primary"); pg.wait_for_timeout(700)
+    snap("01-invite"); pg.click(".tour-invite .btn.primary")
     step("First, a model"); snap("02-model")
     pg.click("[data-tour=models] .btn")
     pg.wait_for_selector(".sheet input[type=password]")
@@ -230,9 +252,7 @@ def walk_the_tour(browser, base: str, model_url: str, out: Path):
     addr.fill(model_url)
     pg.locator(".sheet label.field", has_text="Name").locator("input").fill("OpenRouter")
     pg.click(".sheet .btn.primary")
-    pg.wait_for_selector(".sheet .menu button")
-    pg.click(".sheet .menu button:has-text('OpenRouter')")
-    pg.wait_for_selector(".picker-list button")
+    pg.wait_for_selector(".picker-list button")       # with only the one connection, the picker opens on it
     pg.wait_for_timeout(300); shoot(pg, out / "start-04-pick-model.png")
     pg.click(".picker-list button >> nth=0")
 
@@ -362,7 +382,7 @@ def fill_in(base: str):
 
 
 def front_page(browser, base: str, out: Path, story: int, sc: int, people: dict):
-    seen = "localStorage.setItem('bamah.tour.seen', '1')"
+    seen = "localStorage.setItem('bamah.tour.invite', 'skipped')"
     d = browser.new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=1.5)
     pg = d.new_page()
     pg.goto(base + "/"); pg.evaluate(seen)

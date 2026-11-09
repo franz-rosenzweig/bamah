@@ -48,7 +48,9 @@ Write only {name}'s turn: what they say and do. Never speak or act for anyone el
 
 WITNESSED = "{name} only knows what they've seen, heard or been told. If they weren't there, they don't know it, even when you do."
 
-MEMORY_SYSTEM = """You keep the memory of {name}, a character in a story. Below is part of a scene as {name} experienced it. Write what {name} will remember of it: what happened, what was said that mattered, how they felt about it and about the others, and anything they learned about someone. Write from {name}'s point of view but in the third person, past tense, as two to eight short notes, each on its own line starting with "- ". Only what {name} saw, heard or was told. Be concrete: names, places, promises, insults, secrets, who took whose side. Return only the notes."""
+MEMORY_SYSTEM = """You keep the memory of {name}, a character in a story. Below is part of a scene as {name} experienced it. Write what {name} will remember of it: what happened, what was said that mattered, how they felt about it and about the others, and anything they learned about someone. Write from {name}'s point of view but in the third person, past tense, as two to eight short notes, each on its own line starting with "- ". Only what {name} saw, heard or was told. Be concrete: names, places, promises, insults, secrets, who took whose side.
+
+Some of what {name} already remembers comes first, each with an id like [m12]. Don't write any of it again. If a new note changes something that was true until now (where someone lives, what they plan, who they're with, what they believe, how things stand between two people), end that note with "(replaces m12)", using the old one's id. Never replace a memory of something that happened: what happened stays. Return only the notes."""
 
 LEARNED_SYSTEM = """You keep {name}'s running notes for one story. Update the notes with the new memories below. Keep exactly these three sections, each a few short lines:
 
@@ -58,11 +60,12 @@ Ongoing threads
 
 Under relationships, say how {name} stands with each person who matters to them, and how that has been changing. Keep everything that still holds, change what the new memories changed, and drop what no longer matters. Stay under 1,500 characters. Return only the notes."""
 
-FEELING_SYSTEM = """You keep track of how the characters in a story feel. Read the latest moment and say how {name} feels now. Answer with JSON only, in this shape:
-{{"word": "one word for how {name} feels right now", "mood": "how {name} feels right now, in a few words", "toward": {{"<name of someone in the story>": {{"how": "how {name} feels about them now, in a few words", "strength": <1 to 5, how strongly {name} feels it>}}}}}}
-Include everyone {name} has feelings about. Keep what still holds from before, and change only what this moment changed."""
+FEELING_SYSTEM = """You keep track of how the characters in a story feel, and how much of it they let show. Read the latest moment and say how {name} feels now. Answer with JSON only, in this shape:
+{{"word": "one word for how {name} feels right now", "mood": "how {name} feels right now, in a few words", "toward": {{"<name of someone in the story>": {{"how": "how {name} really feels about them now, in a few words", "shows": "what {name} lets them see, in a few words", "strength": <1 to 5, how strongly {name} feels it>}}}}}}
+"shows" is the face {name} puts on for that person, like "polite, a little too cheerful" or "nothing at all". It can match what they feel, when {name} is open with them, or be far from it, when {name} is hiding it; judge from how {name} is and from what they actually said and did. Include everyone {name} has feelings about. Keep what still holds from before, and change only what this moment changed."""
 
-PICK_SYSTEM = """You run the turn order in a group scene of a story. From the last lines, decide who in the room would naturally speak or react next, in order. Reply with only their names, separated by commas, at most {most}. Reply NOBODY if nobody would."""
+PICK_SYSTEM = """You run the turn order in a group scene of a story. From the last lines, decide who in the room would naturally speak or react next, in order, at most {most}. Each person comes with their share of the lines so far and how long it's been since they last spoke. Don't leave anyone silent for long unless the scene calls for it (someone sulking, listening, or out of it), and don't let one person take over unless the moment is theirs.
+Answer with one person per line: their name, then " - ", then a few words on why them, like "Ben - Mara asked him straight out" or "Cleo - quiet for 6 lines". Reply NOBODY if nobody would."""
 
 STOP = set("""about above after again against also among another because been before being below between both
 cannot could does doing down during each from further have having here hers herself himself into itself just more
@@ -72,6 +75,7 @@ yourselves will shall said says like know want yeah okay well even still really 
 everything someone anyone thing things going come came make made take took give gave tell told look looked""".split())
 
 _locks: dict[tuple, asyncio.Lock] = {}
+_reasons: dict[tuple, str] = {}          # (scene, character): why the turn order picked them, for their next line
 
 
 def _lock(*key) -> asyncio.Lock:
@@ -168,12 +172,12 @@ def base_memories(d, story: dict, ch: dict, budget: int = 6000) -> list[dict]:
     scenes this character wasn't in come along too."""
     mems = db.rows(d.execute(
         "select m.*, s.title as scene_title, s.seq as scene_seq from memory m left join scene s on s.id = m.scene_id "
-        "where m.story_id = ? and m.character_id = ? order by m.pinned desc, m.id desc", (story["id"], ch["id"])))
+        "where m.story_id = ? and m.character_id = ? and m.replaced_by is null order by m.pinned desc, m.id desc", (story["id"], ch["id"])))
     if story["memory"] == "shared":
         mine = {m["scene_id"] for m in mems}
         others = db.rows(d.execute(
             "select m.*, s.title as scene_title, s.seq as scene_seq from memory m left join scene s on s.id = m.scene_id "
-            "where m.story_id = ? and m.character_id != ? order by m.id desc", (story["id"], ch["id"])))
+            "where m.story_id = ? and m.character_id != ? and m.replaced_by is null order by m.id desc", (story["id"], ch["id"])))
         firsts: dict = {}
         for m in others:
             if m["scene_id"] not in mine:
@@ -190,7 +194,12 @@ def base_memories(d, story: dict, ch: dict, budget: int = 6000) -> list[dict]:
     return out
 
 
+COLD = 0.15         # below this a memory has faded: it comes back less readily, and shows dimmed
+
+
 def recall(d, story: dict, ch: dict, text: str, skip: set, most: int) -> list[dict]:
+    """The memories that match what's happening, best first. The full-text match is weighed with each
+    memory's heat, so what keeps coming back comes back more readily, and faded ones less."""
     words = _words(text)
     if not words or most <= 0:
         return []
@@ -198,12 +207,45 @@ def recall(d, story: dict, ch: dict, text: str, skip: set, most: int) -> list[di
     who = "" if story["memory"] == "shared" else " and m.character_id = :cid"
     try:
         found = db.rows(d.execute(
-            "select m.*, s.title as scene_title from memory_fts f join memory m on m.id = f.rowid "
-            "left join scene s on s.id = m.scene_id where memory_fts match :q and m.story_id = :sid" + who +
-            " order by bm25(memory_fts) limit :n", {"q": q, "sid": story["id"], "cid": ch["id"], "n": most + len(skip)}))
+            "select m.*, s.title as scene_title, bm25(memory_fts) as score from memory_fts f join memory m on m.id = f.rowid "
+            "left join scene s on s.id = m.scene_id where memory_fts match :q and m.story_id = :sid and m.replaced_by is null" + who +
+            " order by bm25(memory_fts) limit :n", {"q": q, "sid": story["id"], "cid": ch["id"], "n": 3 * most + len(skip)}))
     except Exception:          # an FTS query it can't parse: no recall this turn
         return []
-    return [m for m in found if m["id"] not in skip][:most]
+
+    def weight(m):
+        heat = 1.0 if m["pinned"] else (m.get("heat") if m.get("heat") is not None else 0.6)
+        w = m["score"] * (0.6 + 0.8 * heat)          # bm25 is negative: more negative is a better match
+        return w * 0.5 if heat < COLD else w
+    found = [m for m in found if m["id"] not in skip]
+    found.sort(key=weight)
+    return found[:most]
+
+
+def warm(d, ids: list[int]):
+    """These came back to mind: they grow warmer, and fade more slowly from now on."""
+    if ids:
+        d.execute(f"update memory set heat = min(1.0, coalesce(heat, 0.6) + 0.2), recalls = coalesce(recalls, 0) + 1, "
+                  f"last_recalled = datetime('now') where id in ({','.join('?' * len(ids))})", ids)
+
+
+def cool(d, story_id: int, cid: int):
+    """After each memory-writing pass, everything not pinned fades a little; what has come back often, less."""
+    d.execute("update memory set heat = coalesce(heat, 0.6) * (0.9 + 0.08 * min(coalesce(recalls, 0), 5) / 5.0) "
+              "where story_id = ? and character_id = ? and pinned = 0 and replaced_by is null", (story_id, cid))
+
+
+def _norm(text: str) -> str:
+    return " ".join(re.findall(r"[\w']+", text.lower()))
+
+
+def same_memory(a: str, b: str) -> bool:
+    """The same note twice: identical once normalized, or most of the words the same."""
+    na, nb = _norm(a), _norm(b)
+    if na == nb:
+        return True
+    wa, wb = {w for w in na.split() if len(w) > 2}, {w for w in nb.split() if len(w) > 2}
+    return bool(wa and wb) and len(wa & wb) / len(wa | wb) >= 0.8
 
 
 def journal_hits(d, story: dict, ch: dict, text: str, most: int = 8) -> list[dict]:
@@ -249,6 +291,9 @@ def system_prompt(d, story: dict, scene: dict, ch: dict, mems: list[dict]) -> st
         parts.append(f"## What {name} looks like\n{ch['appearance'].strip()}")
     if ch["inner_life"].strip():
         parts.append(f"## {name}'s inner life\n{ch['inner_life'].strip()}")
+    if (ch.get("sore_spot") or "").strip():
+        parts.append(f"## {name}'s sore spot\n{ch['sore_spot'].strip()}\nWhen someone presses on it, {name} reacts, in their own way: "
+                     f"they might dodge it, go cold, flare up or change the subject, but it never slides past them.")
     if ch["key_memories"].strip():
         parts.append(f"## Things {name} always remembers\n{ch['key_memories'].strip()}")
     if ch["voice"].strip():
@@ -284,6 +329,10 @@ def system_prompt(d, story: dict, scene: dict, ch: dict, mems: list[dict]) -> st
             lines.append(f"- {where}{m['text']}")
         parts.append(f"# What {name} remembers\n" + "\n".join(lines))
     parts.append(f"# This scene: {scene['title'] or 'Untitled'}\n{scene['setting'].strip()}".rstrip())
+    if (scene.get("aim") or "").strip():
+        parts.append(f"## Where the writer wants this scene to go (only she knows this)\n{scene['aim'].strip()}\n"
+                     f"Let {name} push toward it in {name}'s own way, at {name}'s own pace, the way {name} would get there. "
+                     f"Never say it outright, never mention that there's a plan, and never force it.")
     return "\n\n".join(parts)
 
 
@@ -360,11 +409,16 @@ def nudge(d, story: dict, scene: dict, ch: dict, here: list[dict], recalled: lis
     f = feeling_now(d, story["id"], ch["id"])
     if f and (f["mood"] or f["toward"]):
         parts = [f"[How {name} feels right now: {f['mood']}".rstrip(": ")]
+        shown = f.get("shows") or {}
         for oid, how in (f["toward"] or {}).items():
             other = who.get(int(oid)) if str(oid).isdigit() else str(oid)
             if other and how:
-                parts.append(f"About {other}: {how}")
+                face = shown.get(str(oid))
+                parts.append(f"About {other}: feels {how}; shows {face}" if face else f"About {other}: {how}")
         lines.append(". ".join(parts) + ".]")
+        if any(shown.values()):
+            lines.append(f"[{name} acts on what they show. What they feel only leaks out in small ways: a pause, a word too many, "
+                         f"a look, a joke that lands wrong, unless something pushes it out into the open.]")
     if recalled:
         lines.append(f"[What comes back to {name} right now:\n" + "\n".join(f"- {m['text']}" for m in recalled) + "]")
     if notes:
@@ -408,6 +462,7 @@ async def prompt(scene_id: int, cid: int, *, before: int | None = None, note: st
         mems = base_memories(d, story, ch)
         recent = " ".join(e["content"] for e in evs[-3:] if e["kind"] in ("you", "character"))
         recalled = recall(d, story, ch, recent, {m["id"] for m in mems}, int(db.setting(d, "recall") or 6))
+        warm(d, [m["id"] for m in recalled])
         mine = [e for e in evs if e["kind"] == "you"][-1:]
         trigger = " ".join(e["content"] for e in (evs[-3:] + mine)) + " " + scene["setting"]
         notes = journal_hits(d, story, ch, trigger)
@@ -565,9 +620,10 @@ async def turn(scene_id: int, cid: int, *, model: str | None = None, redo: int |
         else:
             seq = next_seq(d, scene_id)
             cur = d.execute(
-                "insert into event(scene_id, seq, kind, character_id, content, inner, versions, model, witnesses, recalled) "
-                "values (?, ?, 'character', ?, ?, ?, ?, ?, ?, ?)",
-                (scene_id, seq, cid, text, inner, json.dumps([take]), ref, json.dumps(p["here"]), json.dumps(p["recalled"])))
+                "insert into event(scene_id, seq, kind, character_id, content, inner, versions, model, witnesses, recalled, reason) "
+                "values (?, ?, 'character', ?, ?, ?, ?, ?, ?, ?, ?)",
+                (scene_id, seq, cid, text, inner, json.dumps([take]), ref, json.dumps(p["here"]), json.dumps(p["recalled"]),
+                 _reasons.pop((scene_id, cid), "")))
             eid = cur.lastrowid
         ev = event_out(d, eid)
     yield ("done", ev)
@@ -635,7 +691,28 @@ def mentioned(text: str, here: list[dict]) -> list[int]:
 
 
 async def pick(scene_id: int, *, more: bool = False) -> list[int]:
-    """Who answers now. more: she asked them to keep going without saying anything."""
+    """Who answers now. more: she asked them to keep going without saying anything. Each pick's reason
+    is kept for the line they write next."""
+    order = await _pick(scene_id, more=more)
+    for cid, why in order:
+        _reasons[(scene_id, cid)] = why
+    return [cid for cid, _ in order]
+
+
+def turn_stats(evs: list[dict], here: list[dict]) -> dict[int, tuple[int, int | None]]:
+    """For each character here: their share of the characters' lines so far (percent), and how many
+    lines (hers and theirs) since they last spoke, or None if they haven't yet."""
+    talk = [e for e in evs if e["kind"] in ("you", "character")]
+    theirs = [e for e in talk if e["kind"] == "character"]
+    out = {}
+    for c in here:
+        mine = [i for i, e in enumerate(talk) if e["kind"] == "character" and e["character_id"] == c["id"]]
+        share = round(100 * len(mine) / len(theirs)) if theirs else 0
+        out[c["id"]] = (share, len(talk) - 1 - mine[-1] if mine else None)
+    return out
+
+
+async def _pick(scene_id: int, *, more: bool) -> list[tuple[int, str]]:
     with db.connect() as d:
         story, scene = story_of(d, scene_id)
         here = present(d, scene_id)
@@ -649,21 +726,33 @@ async def pick(scene_id: int, *, more: bool = False) -> list[int]:
     if last and last["kind"] == "you" and not more:
         named = mentioned(last["content"], here)
         if named:
-            return named[:most]
+            return [(cid, "Named in your line") for cid in named[:most]]
+    stats = turn_stats(evs, here)
+    quiet = lambda cid: "Hasn't spoken yet" if stats[cid][1] is None else f"Quiet for {stats[cid][1]} lines"
     if len(here) == 1:
-        return [here[0]["id"]]
+        return [(here[0]["id"], "The only one here")]
     last_speaker = next((e["character_id"] for e in reversed(evs) if e["kind"] == "character"), None)
     if ref:
-        people = "\n".join(f"- {c['name']}: {(c['personality'] or '').strip()[:200]}" for c in here)
+        people = []
+        for c in here:
+            share, since = stats[c["id"]]
+            gap = "hasn't spoken yet" if since is None else ("spoke last" if since == 0 else f"{since} lines since they last spoke")
+            people.append(f"- {c['name']} ({share}% of the lines so far, {gap}): {(c['personality'] or '').strip()[:200]}")
         recent = "\n".join(line(e, who) for e in evs[-10:]) or "(The scene hasn't started.)"
-        ask = f"People in the room:\n{people}\n\nThe scene: {scene['setting']}\n\nThe last lines:\n{recent}"
+        ask = f"People in the room:\n" + "\n".join(people) + f"\n\nThe scene: {scene['setting']}\n\nThe last lines:\n{recent}"
         if more and last_speaker:
             ask += f"\n\n{who.get(last_speaker)} just spoke; pick someone else unless they'd clearly go on."
         try:
             reply = await models.complete(ref, PICK_SYSTEM.format(most=most), [{"role": "user", "content": ask}])
             if reply.strip().upper().startswith("NOBODY"):
                 return []
-            order = mentioned(reply, here)
+            order: list[tuple[int, str]] = []
+            for ln in reply.splitlines():
+                m = re.split(r"\s+[-–—:]\s+", ln.strip(), maxsplit=1)
+                why = m[1].strip().strip(".") if len(m) > 1 else ""
+                for cid in mentioned(m[0], here):          # usually one name; several if it lists them
+                    if cid not in [c for c, _ in order]:
+                        order.append((cid, (why[:1].upper() + why[1:])[:80] if why else quiet(cid)))
             if order:
                 return order[:most]
         except ModelError as e:
@@ -673,7 +762,8 @@ async def pick(scene_id: int, *, more: bool = False) -> list[int]:
     for e in evs:
         if e["kind"] == "character":
             spoke[e["character_id"]] = e["seq"]
-    return [min(here, key=lambda c: spoke.get(c["id"], -1))["id"]]
+    first = min(here, key=lambda c: spoke.get(c["id"], -1))["id"]
+    return [(first, quiet(first))]
 
 
 # --- Memory -----------------------------------------------------------------------------------
@@ -715,20 +805,67 @@ async def condense(scene_id: int, cid: int, upto: int | None = None):
             lines.append(line(e, who))
             if e["kind"] == "character" and e["character_id"] == cid and e["inner"]:
                 lines.append(f"({ch['name']} felt: {e['inner']})")
-        body = f"Scene: {scene['title'] or 'Untitled'}\n{scene['setting']}\n\n" + "\n".join(lines)
+        with db.connect() as d:
+            known = _known(d, story, ch, " ".join(e["content"] for e in spoken))
+            mine = [r["text"] for r in d.execute("select text from memory where story_id = ? and character_id = ? "
+                                                 "and replaced_by is null", (story["id"], cid))]
+        body = ""
+        if known:
+            body = f"What {ch['name']} already remembers:\n" + "\n".join(f"[m{m['id']}] {m['text']}" for m in known) + "\n\n"
+        body += f"Scene: {scene['title'] or 'Untitled'}\n{scene['setting']}\n\n" + "\n".join(lines)
         try:
             text = await models.complete(ref, MEMORY_SYSTEM.format(name=ch["name"]), [{"role": "user", "content": body}])
         except ModelError as e:
             log.warning("condense: %s %s", e.code, e.detail)
             return
-        notes = _notes(text)
+        replaceable = {m["id"] for m in known}
+        notes = []
         with db.connect() as d:
-            for n in notes:
-                d.execute("insert into memory(character_id, story_id, scene_id, text) values (?, ?, ?, ?)",
-                          (cid, story["id"], scene_id, n))
+            for n in _notes(text):
+                old = None
+                m = re.search(r"\s*\(replaces?\s+\[?m?(\d+)\]?\)\s*\.?$", n, re.I)
+                if m:
+                    n, old = n[:m.start()].rstrip(), int(m.group(1))
+                    old = old if old in replaceable else None
+                if not n or any(same_memory(n, t) for t in mine):
+                    continue
+                new = d.execute("insert into memory(character_id, story_id, scene_id, text, from_seq, to_seq) values (?, ?, ?, ?, ?, ?)",
+                                (cid, story["id"], scene_id, n, start + 1, last)).lastrowid
+                if old:
+                    d.execute("update memory set replaced_by = ? where id = ? and replaced_by is null", (new, old))
+                mine.append(n)
+                notes.append(n)
+            cool(d, story["id"], cid)
         _mark(scene_id, cid, last)
         if notes:
             await update_learned(story["id"], cid, notes)
+
+
+def _known(d, story: dict, ch: dict, text: str, most: int = 14) -> list[dict]:
+    """What the memory-keeper should see before writing more: the memories that match these lines, and
+    the newest ones, none that have been replaced."""
+    hits = recall(d, story, {**ch}, text, set(), 8) if text.strip() else []
+    hits = [m for m in hits if m["character_id"] == ch["id"]]
+    recent = db.rows(d.execute("select * from memory where story_id = ? and character_id = ? and replaced_by is null "
+                               "order by id desc limit 8", (story["id"], ch["id"])))
+    out, seen = [], set()
+    for m in hits + recent:
+        if m["id"] not in seen:
+            seen.add(m["id"])
+            out.append(m)
+    return sorted(out, key=lambda m: m["id"])[:most]
+
+
+def forget_lines(d, scene_id: int, seq: int, through: int | None = None):
+    """Lines taken back (from seq on, or just seq..through): the memories written from them go, anything
+    they replaced comes back, and what's left of those lines can be written down again."""
+    q = "select * from memory where scene_id = ? and to_seq >= ?" + (" and from_seq <= ?" if through is not None else "")
+    args = (scene_id, seq, through) if through is not None else (scene_id, seq)
+    for m in db.rows(d.execute(q, args)):
+        d.execute("update memory set replaced_by = null where replaced_by = ?", (m["id"],))
+        d.execute("delete from memory where id = ?", (m["id"],))
+        d.execute("update condensed set upto = min(upto, ?) where scene_id = ? and character_id = ?",
+                  ((m["from_seq"] or 1) - 1, scene_id, m["character_id"]))
 
 
 def _mark(scene_id: int, cid: int, upto: int):
@@ -795,8 +932,10 @@ async def update_feelings(story_id: int, scene_id: int, cid: int, eid: int):
             return
         was = "nothing recorded yet"
         if before:
+            face = before.get("shows") or {}
             was = (before["mood"] or "") + "; " + "; ".join(
-                f"{who.get(int(k), k) if str(k).isdigit() else k}: {v}" for k, v in (before["toward"] or {}).items())
+                f"{who.get(int(k), k) if str(k).isdigit() else k}: {v}" + (f" (shows: {face[str(k)]})" if face.get(str(k)) else "")
+                for k, v in (before["toward"] or {}).items())
         body = (f"How {ch['name']} felt before: {was}\n\nPeople in the story: {', '.join(str(v) for v in people.values())}\n\n"
                 f"The moment:\n" + "\n".join(line(e, who) for e in evs) +
                 f"\n\n{ch['name']}'s private feelings just now: {ev['inner']}")
@@ -815,20 +954,24 @@ async def update_feelings(story_id: int, scene_id: int, cid: int, eid: int):
         by_name = {str(v).lower(): k for k, v in people.items()}
         for k, v in people.items():
             by_name.setdefault(str(v).split()[0].lower(), k)
-        toward, strength = {}, {}
+        toward, strength, shows = {}, {}, {}
         for n, v in (obj.get("toward") or {}).items():
             k = by_name.get(str(n).lower()) or by_name.get(str(n).split()[0].lower() if str(n).split() else "")
             how, much = (v.get("how"), v.get("strength")) if isinstance(v, dict) else (v, None)
             if k is not None and how:
                 toward[str(k)] = str(how)[:200]
+                if isinstance(v, dict) and str(v.get("shows") or "").strip():
+                    shows[str(k)] = str(v["shows"]).strip()[:200]
                 try:
                     strength[str(k)] = min(5, max(1, round(float(much))))
                 except (TypeError, ValueError):
                     pass
         word = str(obj.get("word") or "").strip().split(" ")[0].strip(".,;:!").capitalize()[:24]
         with db.connect() as d:
-            d.execute("insert into feeling(story_id, character_id, event_id, mood, toward, word, strength) values (?, ?, ?, ?, ?, ?, ?)",
-                      (story_id, cid, eid, str(obj.get("mood", ""))[:200], json.dumps(toward), word, json.dumps(strength)))
+            d.execute("insert into feeling(story_id, character_id, event_id, mood, toward, word, strength, shows) "
+                      "values (?, ?, ?, ?, ?, ?, ?, ?)",
+                      (story_id, cid, eid, str(obj.get("mood", ""))[:200], json.dumps(toward), word, json.dumps(strength),
+                       json.dumps(shows)))
 
 
 async def end_scene(scene_id: int):
@@ -846,15 +989,26 @@ async def end_scene(scene_id: int):
 
 # --- Help with writing ------------------------------------------------------------------------
 
-DRAFT_SYSTEM = """You help a novelist sketch a character for her story. From her few words, write a first draft of the character the way she writes them: specific, lived-in details instead of generic traits, and the contradictions that make a person. Answer with JSON only, with exactly these keys:
+DRAFT_SYSTEM = """You help a novelist sketch a character for her story. From her few words, and from anything she has already written about them, write a first draft of the rest the way she'd write it: a particular person, not a type.
+
+- Tie every trait to something concrete: a habit, a thing they carry, how they spend money, a phrase they lean on. "Generous" is the one who always pays and remembers what everybody ordered.
+- Give them two wants that pull against each other, so they can't have both.
+- Give them a sore spot: a topic, a name or an object they steer away from, and how they steer.
+- Not everyone is wounded. Plenty of people are content, vain, petty, cheerful or simply busy. A sore spot doesn't have to be a tragedy, unless her words point that way.
+- Show how they talk with a line or two of theirs, one of them a moment where they deflect or refuse something.
+
+What she has already written stays exactly as it is: don't repeat it or contradict it, and make what you write fit it. Answer with JSON only, with just the keys you're asked for, from these:
 "pronouns": like "she/her",
 "appearance": two or three sentences on how they look and carry themselves,
 "personality": who they are: their history, habits and what they're like with people, 120 to 200 words, about them in the third person,
-"inner_life": what they want, what they fear, what they hide, and how they show or hide what they feel, 40 to 80 words,
-"voice": how they talk, with one or two example lines,
+"inner_life": the two wants that pull against each other, what they fear, what they hide, and how they show or hide what they feel, 40 to 90 words,
+"sore_spot": what they steer away from, and what they do when someone presses on it, a sentence or two,
+"voice": how they talk, with one or two example lines, one of them deflecting or refusing,
 "key_memories": two to four short facts they always carry, one per line."""
 
-DRAFT_KEYS = ("pronouns", "appearance", "personality", "inner_life", "voice", "key_memories")
+DRAFT_KEYS = ("pronouns", "appearance", "personality", "inner_life", "sore_spot", "voice", "key_memories")
+DRAFT_LABELS = {"pronouns": "Pronouns", "appearance": "Appearance", "personality": "Who they are", "inner_life": "Inner life",
+                "sore_spot": "Sore spot", "voice": "How they talk", "key_memories": "Always remembers"}
 
 SUGGEST_SYSTEM = """You help a novelist keep a scene moving. {who} Write only that next turn: short, in the scene's own style, giving the characters something to react to. Don't speak or act for any of the characters. Return only the text, with no name in front and no quotation marks around the whole of it."""
 
@@ -870,7 +1024,9 @@ def _json(text: str) -> dict:
     return obj if isinstance(obj, dict) else {}
 
 
-async def draft_character(cid: int, words: str) -> dict:
+async def draft_character(cid: int, words: str, replace: bool = False) -> dict:
+    """Fill in the boxes of a character's sheet that are empty, to fit the ones she has filled.
+    replace: start over on all of them."""
     with db.connect() as d:
         ch = character(d, cid)
         tied = d.execute("select * from persona where id = ?", (ch.get("persona_id") or 0,)).fetchone()
@@ -879,15 +1035,25 @@ async def draft_character(cid: int, words: str) -> dict:
         ref = text_model(d, story, ch)
     if not ref:
         raise ModelError("setup", "no model picked")
-    ask = f"Name: {ch['name']}\nHer words: {words.strip()}"
+    kept = {} if replace else {k: (ch.get(k) or "").strip() for k in DRAFT_KEYS if (ch.get(k) or "").strip()}
+    todo = [k for k in DRAFT_KEYS if k not in kept]
+    if not todo:
+        return {}
+    ask = f"Name: {ch['name']}"
+    if words.strip():
+        ask += f"\nHer words: {words.strip()}"
+    if kept:
+        ask += "\n\nWhat she has already written (keep it exactly; make the rest fit it):\n" + \
+               "\n".join(f"{DRAFT_LABELS[k]}: {v}" for k, v in kept.items())
     if story and story.get("premise"):
-        ask += f"\nThe story: {story['premise'][:1500]}"
+        ask += f"\n\nThe story: {story['premise'][:1500]}"
     if tied:
         ask += f"\nShe usually plays {tied['name']} opposite this character ({tied['about']}); give them a history together."
+    ask += "\n\nWrite these keys only: " + ", ".join(todo)
     reply = await models.complete(ref, DRAFT_SYSTEM, [{"role": "user", "content": ask}], effort="medium")
     obj = _json(reply)
     out = {}
-    for k in DRAFT_KEYS:
+    for k in todo:
         v = obj.get(k)
         if isinstance(v, list):
             v = "\n".join(str(x) for x in v)
@@ -918,3 +1084,94 @@ async def suggest_line(scene_id: int, as_name: str = "") -> str:
     if persona and text.lower().startswith(persona["name"].lower() + ":"):
         text = text[len(persona["name"]) + 1:].strip()
     return text
+
+
+# --- Journal entries from her own pages, and from lines of a scene ----------------------------
+
+SPLIT_SYSTEM = """You help a novelist turn her notes into journal entries for her story. An entry is one thing worth having in mind on its own: a person, a place, an object, something that happened before the story, a rule of the world, how two people stand. Answer with JSON only:
+{"entries": [{"title": "a short title", "keys": ["two to five keyphrases that would come up in a scene when this matters: names, places, objects, nicknames"], "text": "the entry, in her own words wherever you can, 30 to 150 words"}]}
+Keep her facts exactly as she has them and don't add any. Leave out what isn't worth keeping. Don't make two entries about the same thing."""
+
+CHECK_SYSTEM = """You check a novelist's new journal entries for her story before she adds them. Look for three things: the same keyphrase on entries that are about different things ("duplicate"), one name spelled two ways ("spelling"), and facts that contradict each other ("contradiction"), also against what's already in her journal. Answer with JSON only:
+{"issues": [{"kind": "duplicate" or "spelling" or "contradiction", "entries": [the numbers of the new entries involved], "note": "what's wrong, in one short sentence"}]}
+An empty list if nothing is wrong. Don't flag anything else."""
+
+LINES_SYSTEM = """You help a novelist keep notes on her story. From the lines she picked out of a scene, write one journal entry worth keeping: a fact, a promise, a secret, a place, how two people stand. Answer with JSON only:
+{"title": "a short title", "keys": ["two to five keyphrases that would come up in a scene when this matters"], "text": "the entry, 30 to 120 words"}
+or {"nothing": true} if there's nothing in them worth keeping."""
+
+
+def _chunks(text: str, size: int = 8000) -> list[str]:
+    out, cur = [], ""
+    for para in re.split(r"\n\s*\n", text):
+        if cur and len(cur) + len(para) > size:
+            out.append(cur)
+            cur = ""
+        cur += ("\n\n" if cur else "") + para[:size * 2]
+    if cur.strip():
+        out.append(cur)
+    return out
+
+
+def _entry(v) -> dict | None:
+    if not isinstance(v, dict) or not str(v.get("text") or "").strip():
+        return None
+    keys = v.get("keys") or []
+    if isinstance(keys, str):
+        keys = keys.split(",")
+    return {"title": str(v.get("title") or "").strip()[:120], "keys": ", ".join(str(k).strip() for k in keys if str(k).strip())[:300],
+            "text": str(v["text"]).strip()}
+
+
+async def split_into_entries(text: str, story_id: int | None = None) -> dict:
+    """Her pages as journal entries, and what's worth a second look before she adds them. Nothing is saved."""
+    with db.connect() as d:
+        story = db.row(d.execute("select * from story where id = ?", (story_id,)).fetchone()) if story_id else None
+        ref = text_model(d, story) if not db.setting(d, "helper_model") else helper_model(d, story)
+        have = db.rows(d.execute("select title, keys, text from journal where story_id is null" +
+                                 (" or story_id = ?" if story_id else ""), (story_id,) if story_id else ()))
+    if not ref:
+        raise ModelError("setup", "no model picked")
+    entries: list[dict] = []
+    for part in _chunks(text):
+        reply = await models.complete(ref, SPLIT_SYSTEM, [{"role": "user", "content": part}], effort="low")
+        for v in (_json(reply).get("entries") or []):
+            e = _entry(v)
+            if e:
+                entries.append(e)
+    if not entries:
+        raise ModelError("empty", "no entries came back")
+    issues = []
+    if len(entries) > 1 or have:
+        body = "New entries:\n" + "\n".join(f"{i}. {e['title']} [{e['keys']}]: {e['text']}" for i, e in enumerate(entries, 1))
+        if have:
+            body += "\n\nAlready in the journal:\n" + "\n".join(f"- {h['title']} [{h['keys']}]: {h['text'][:300]}" for h in have[:60])
+        try:
+            reply = await models.complete(ref, CHECK_SYSTEM, [{"role": "user", "content": body}], effort="low")
+            for v in (_json(reply).get("issues") or []):
+                if not isinstance(v, dict) or v.get("kind") not in ("duplicate", "spelling", "contradiction"):
+                    continue
+                nums = sorted({int(n) - 1 for n in (v.get("entries") or []) if str(n).isdigit() and 0 < int(n) <= len(entries)})
+                if nums:
+                    issues.append({"kind": v["kind"], "entries": nums, "note": str(v.get("note") or "").strip()[:240]})
+        except ModelError as e:
+            log.info("journal check: %s", e.code)
+    return {"entries": entries, "issues": issues}
+
+
+async def entry_from_lines(scene_id: int, event_ids: list[int]) -> dict:
+    """One journal entry from the lines she picked, or {"nothing": True}."""
+    with db.connect() as d:
+        story, scene = story_of(d, scene_id)
+        who = names(d)
+        evs = [e for e in events(d, scene_id) if e["id"] in set(event_ids)]
+        ref = text_model(d, story) if not db.setting(d, "helper_model") else helper_model(d, story)
+    if not evs:
+        return {"nothing": True}
+    if not ref:
+        raise ModelError("setup", "no model picked")
+    body = f"The story: {story['title']}\nThe scene: {scene['title'] or 'Untitled'}. {scene['setting']}\n\nThe lines:\n" + \
+           "\n".join(line(e, who) for e in evs)
+    obj = _json(await models.complete(ref, LINES_SYSTEM, [{"role": "user", "content": body}], effort="low"))
+    e = None if obj.get("nothing") else _entry(obj)
+    return {"entry": e} if e else {"nothing": True}

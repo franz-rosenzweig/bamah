@@ -16,7 +16,11 @@ Tap a character to open their page. The menu down the side has their **Personali
 
 ### Drafting from a few words
 
-The box at the top takes a few words, like "sad, funny, works the morning shift, hates cinnamon", and **Draft** writes the whole sheet from them: pronouns, appearance, who they are, their inner life, how they talk and what they always remember. If the sheet already has something in it, Bamah asks first before replacing it.
+The box at the top takes a few words, like "sad, funny, works the morning shift, hates cinnamon", and **Draft** writes the sheet from them: pronouns, appearance, who they are, their inner life, their sore spot, how they talk and what they always remember.
+
+Anything you've already written stays exactly as you wrote it. Draft only fills in the empty boxes, and makes them fit what's there, so you can write the one thing you know about someone and let it suggest the rest. When there's something on the sheet already, the few words can even be left out. Only when every box is full does it ask whether to replace it all.
+
+It aims for a person rather than a type: every trait tied to something they do or carry, two wants that pull against each other, a sore spot, and a line where they dodge or refuse something. Not everyone comes out wounded, unless your words point that way.
 
 ### The sheet
 
@@ -26,6 +30,7 @@ The box at the top takes a few words, like "sad, funny, works the morning shift,
 - **Usually with:** one of your personas, if you usually play opposite this character. See [Stories and scenes](scenes.md#you-play).
 - **Who they are:** their story, their traits, the way they come across.
 - **Inner life:** what they want, what they fear, what they hide.
+- **Sore spot:** a topic, a name or a thing they steer away from. When someone presses on it, they react, in their own way.
 - **How they talk:** their voice, the words they use and don't.
 - **Always remembers:** a few facts that are always in front of them.
 - **Always:** one instruction that always wins, like "never says I love you first".
@@ -41,7 +46,7 @@ A thumbs up keeps a line as an example of how they sound. Those are under **Soun
 
 ## Their journal
 
-The **Journal** is notes that come to mind when one of their keyphrases comes up in a scene: a person's name, a place, an object. Each entry has a title, keyphrases separated by commas, and the note itself. **File** brings in a Word document, PDF or text file as an entry, like a backstory you've already written.
+The **Journal** is notes that come to mind when one of their keyphrases comes up in a scene: a person's name, a place, an object. Each entry has a title, keyphrases separated by commas, and the note itself. **File** brings in a Word document, PDF or text file, like a backstory you've already written, either **As one entry** or **Split into entries**. See [Feelings and memory](feelings-and-memory.md#journal-entries-from-your-pages).
 
 A story has a journal of its own for things everyone in it would know, and **Settings** has a shared journal for every story.
 
