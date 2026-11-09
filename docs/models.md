@@ -29,6 +29,16 @@ There are three jobs, under **Settings › Default**:
 
 A story can have its own model (**Setup › Model**), and so can a character (their **Model** page), which wins over the story's. That way the old general can speak through one model and the poet through another.
 
+## Thinking
+
+Most of the newer models think before they answer. That thinking is paid for like the reply itself, and it's why some of them sit quiet for a while before the first word shows up. A few think as hard as they can unless they're told otherwise. **Settings › Default › Thinking** says how much they should, for models on OpenRouter:
+
+- **Low**, to start with: a little thought, a quick reply, and a much smaller bill.
+- **Off**, for the quickest and cheapest. A model that can't stop thinking altogether thinks as little as it can.
+- **High**, when a scene matters and you don't mind waiting and paying more. If the lines feel flat, it's worth trying.
+
+It's for the characters' lines. Memory, feelings and who speaks next never think more than **Low**, since they happen after every line. If a model won't take the setting, Bamah asks it again without, so a line never fails over it.
+
 ## Comparing them
 
 The quickest way to find the model that sounds right is the crossed arrows under a line: they take the same line again with whichever model you pick. Every take is kept, and **‹ 1 / 2 ›** steps between them. The model that wrote a line is shown in grey next to the character's name.

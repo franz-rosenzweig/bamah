@@ -44,7 +44,7 @@ The AI companion apps are good at one character at a time, but they're expensive
 - **Bring in your pages:** drop in a chapter, an outline or a backstory (Word, PDF or text), into a scene where everyone there reads it, onto one character, or into the story's journal.
 - **Ideas:** star a moment and add a note, and it goes on the Ideas list. A story exports to Markdown.
 - **Easy on the eyes:** dark by default, light if you like, and the text size per device, for long reading sessions. It works on a phone too.
-- **Any model:** OpenRouter (hundreds of models), OpenAI, Claude, Gemini, Ollama on your own computer, anything else that speaks the OpenAI format, or your own ChatGPT plan through "Sign in with ChatGPT". Each story and each character can use a different one. See [Models](docs/models.md).
+- **Any model:** OpenRouter (hundreds of models), OpenAI, Claude, Gemini, Ollama on your own computer, anything else that speaks the OpenAI format, or your own ChatGPT plan through "Sign in with ChatGPT". Each story and each character can use a different one, and on OpenRouter you choose how much they think before they answer. See [Models](docs/models.md).
 
 ## Screenshots
 

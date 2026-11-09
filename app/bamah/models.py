@@ -101,7 +101,7 @@ async def stream(ref: str, system: str, messages: list[dict], *, effort: str = "
     elif conn["preset"] == "chatgpt":
         gen = _chatgpt(conn, model, system, messages)
     else:
-        gen = _chat(conn, model, system, messages)
+        gen = _chat(conn, model, system, messages, effort)
     async for piece in gen:
         yield piece
 
@@ -115,43 +115,87 @@ async def complete(ref: str, system: str, messages: list[dict], *, effort: str =
 
 # --- The OpenAI chat format -------------------------------------------------------------------
 
-async def _chat(conn, model, system, messages):
+async def _chat(conn, model, system, messages, effort="medium"):
     base = (conn["base_url"] or "").rstrip("/")
     if not base:
         raise ModelError("setup", "this connection has no address")
     headers = {"content-type": "application/json"}
     if conn["api_key"]:
         headers["authorization"] = f"Bearer {conn['api_key']}"
+    body = {"model": model, "stream": True, "messages": [{"role": "system", "content": system}] + messages}
     if conn["preset"] == "openrouter":
         headers["x-title"] = config.NAME
-    body = {"model": model, "stream": True, "messages": [{"role": "system", "content": system}] + messages}
+        reasoning = await _reasoning(conn["id"], model, effort)
+        if reasoning:
+            body["reasoning"] = reasoning
+    for attempt in (1, 2):
+        try:
+            async with _http() as c, c.stream("POST", base + "/chat/completions", headers=headers, json=body) as r:
+                if r.status_code >= 400:
+                    text = (await r.aread()).decode(errors="replace")
+                    if r.status_code == 400 and attempt == 1 and body.pop("reasoning", None):
+                        log.info("chat %s: %s turned down the thinking setting, asking again without it", conn["preset"], model)
+                        continue
+                    log.warning("chat %s %s: %s", conn["preset"], r.status_code, text[:300])
+                    raise ModelError(_status(r.status_code), _detail(text))
+                async for line in r.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        obj = json.loads(data)
+                    except ValueError:
+                        continue
+                    if obj.get("error"):
+                        raise ModelError("refused" if "moderation" in json.dumps(obj["error"]).lower() else "down",
+                                         _detail(json.dumps(obj["error"])))
+                    for ch in obj.get("choices") or []:
+                        piece = (ch.get("delta") or {}).get("content")
+                        if piece:
+                            yield piece
+                        if ch.get("finish_reason") == "content_filter":
+                            raise ModelError("refused", "the provider's filter stopped it")
+            return
+        except httpx.TransportError as e:
+            raise ModelError("network", str(e)) from e
+
+
+# --- Thinking ---------------------------------------------------------------------------------
+# Most models on OpenRouter think before they answer, and that's billed as output and holds back the first
+# word. Some think at "max" unless told otherwise. The Thinking setting (off, low or high) sets it for a
+# character's line; the bookkeeping (memory, feelings, who speaks next) never thinks more than low.
+# OpenRouter's model list says which levels each model takes, so it gets the nearest one it has.
+
+EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+THINKING = {"off": "none", "low": "low", "high": "high"}
+
+
+def nearest(info: dict, want: str) -> str:
+    """The level to ask a model for: `want`, or the next one up it takes, or else its highest."""
+    takes = [e for e in EFFORTS if e in (info.get("supported_efforts") or [])]
+    if not takes:
+        return "low" if want == "none" and info.get("mandatory") else want
+    up = [e for e in takes if EFFORTS.index(e) >= EFFORTS.index(want)]
+    return up[0] if up else takes[-1]
+
+
+async def _reasoning(conn_id: int, model: str, effort: str) -> dict | None:
+    with db.connect() as d:
+        want = THINKING.get(db.setting(d, "thinking") or "", "low")
+    if effort == "low" and EFFORTS.index(want) > EFFORTS.index("low"):
+        want = "low"
     try:
-        async with _http() as c, c.stream("POST", base + "/chat/completions", headers=headers, json=body) as r:
-            if r.status_code >= 400:
-                text = (await r.aread()).decode(errors="replace")
-                log.warning("chat %s %s: %s", conn["preset"], r.status_code, text[:300])
-                raise ModelError(_status(r.status_code), _detail(text))
-            async for line in r.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    obj = json.loads(data)
-                except ValueError:
-                    continue
-                if obj.get("error"):
-                    raise ModelError("refused" if "moderation" in json.dumps(obj["error"]).lower() else "down",
-                                     _detail(json.dumps(obj["error"])))
-                for ch in obj.get("choices") or []:
-                    piece = (ch.get("delta") or {}).get("content")
-                    if piece:
-                        yield piece
-                    if ch.get("finish_reason") == "content_filter":
-                        raise ModelError("refused", "the provider's filter stopped it")
-    except httpx.TransportError as e:
-        raise ModelError("network", str(e)) from e
+        listed = {m["id"]: m for m in await available(conn_id)}
+    except Exception:          # no list right now: ask anyway, and _chat asks again without it if it's turned down
+        listed = {}
+    m = listed.get(model)
+    if m is None or "reasoning" not in m:
+        return {"effort": want}
+    if m["reasoning"] is None:     # a model that doesn't think
+        return None
+    return {"effort": nearest(m["reasoning"], want)}
 
 
 def _detail(text: str) -> str:
@@ -292,7 +336,11 @@ async def available(conn_id: int, fresh: bool = False) -> list[dict]:
             mid = m.get("id", "")
             if mid.startswith("models/"):            # Gemini's names
                 mid = mid[7:]
-            out.append({"id": mid, "name": m.get("name") or mid})
+            entry = {"id": mid, "name": m.get("name") or mid}
+            if conn["preset"] == "openrouter":       # how it thinks, if it does (see _reasoning)
+                thinks = "reasoning" in (m.get("supported_parameters") or [])
+                entry["reasoning"] = m.get("reasoning") or ({} if thinks else None)
+            out.append(entry)
         out.sort(key=lambda m: m["id"])
     _model_lists[conn_id] = (time.time(), out)
     return out

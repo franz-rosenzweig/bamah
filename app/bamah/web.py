@@ -842,7 +842,7 @@ def ideas():
 
 # --- Settings and models ----------------------------------------------------------------------
 
-SETTINGS = ("default_model", "helper_model", "portrait_model", "short_term", "recall", "feelings", "round", "repetition")
+SETTINGS = ("default_model", "helper_model", "portrait_model", "thinking", "short_term", "recall", "feelings", "round", "repetition")
 
 
 @app.get("/api/settings")

@@ -1443,12 +1443,13 @@ async function settingsView() {
     if (q.chatgpt) err.textContent = 'Not connected';
   }
 
+  const set = (k) => (v) => PUT('/api/settings', {[k]: v});
   wrap.append(h('h3', {}, 'Default'), h('div', {class: 'group'},
     line('Characters', modelButton(s.labels.default_model, 'Pick', async (v) => { await PUT('/api/settings', {default_model: v}); })),
     line('Memory and turn order', modelButton(s.labels.helper_model, 'Same as characters', async (v) => { await PUT('/api/settings', {helper_model: v}); }, {allowDefault: true, defaultLabel: 'Same as characters'})),
-    line('Portraits', modelButton(s.labels.portrait_model, 'Pick', async (v) => { await PUT('/api/settings', {portrait_model: v}); }))));
+    line('Portraits', modelButton(s.labels.portrait_model, 'Pick', async (v) => { await PUT('/api/settings', {portrait_model: v}); })),
+    mark(line('Thinking', seg([['off', 'Off'], ['low', 'Low'], ['high', 'High']], s.settings.thinking, set('thinking'))), 'thinking')));
 
-  const set = (k) => (v) => PUT('/api/settings', {[k]: v});
   wrap.append(h('h3', {}, 'Memory'), h('div', {class: 'group'},
     line('Short-term', seg([['20000', 'Small'], ['60000', 'Medium'], ['150000', 'Large'], ['400000', 'Huge']], s.settings.short_term, set('short_term'))),
     line('Memories recalled per reply', seg([['3', '3'], ['6', '6'], ['9', '9'], ['15', '15']], s.settings.recall, set('recall'))),

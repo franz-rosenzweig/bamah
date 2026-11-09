@@ -209,7 +209,7 @@ COLUMNS = [
     ("portrait", "source", "text default ''"),       # where a library portrait came from
 ]
 
-DEFAULTS = {"short_term": "60000", "recall": "6", "feelings": "1", "round": "3", "repetition": "1"}
+DEFAULTS = {"short_term": "60000", "recall": "6", "feelings": "1", "round": "3", "repetition": "1", "thinking": "low"}
 
 
 def connect() -> sqlite3.Connection:

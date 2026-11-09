@@ -6,7 +6,7 @@
 
 - **Models:** the services you've connected, and **Add**. See [Models](models.md).
 - **ChatGPT:** signing in with your ChatGPT plan.
-- **Default:** the model for **Characters**, for **Memory and turn order**, and for **Portraits**.
+- **Default:** the model for **Characters**, for **Memory and turn order**, and for **Portraits**, and **Thinking** (**Off**, **Low** or **High**), how much models on OpenRouter think before they answer. See [Thinking](models.md#thinking).
 - **Memory:**
   - **Short-term:** how much of a scene each character sees word for word, from **Small** to **Huge**. Bigger is better until it gets slow or costly.
   - **Memories recalled per reply:** how many older memories come back before each line.
