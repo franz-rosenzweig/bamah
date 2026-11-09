@@ -25,7 +25,7 @@ There are three jobs, under **Settings › Default**:
 
 - **Characters:** the voices. This is where a better model shows: the bigger, newer ones keep a character's voice and their contradictions much better. It's worth trying a few.
 - **Memory and turn order:** the quiet work, like writing memories, tracking feelings and deciding who speaks next. A small, quick model is fine here, and costs very little.
-- **Portraits:** an image model, only if you want to generate portraits. See [Portraits](portraits.md).
+- **Portraits:** an image model, only if you want to generate portraits. **Generate** asks for one the first time. See [Portraits](portraits.md).
 
 A story can have its own model (**Setup › Model**), and so can a character (their **Model** page), which wins over the story's. That way the old general can speak through one model and the poet through another.
 

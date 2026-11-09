@@ -856,7 +856,8 @@ def get_settings():
         vals = {k: db.setting(d, k) for k in SETTINGS}
         labels = {k: models.label(vals[k]) for k in ("default_model", "helper_model", "portrait_model")}
     return {"connections": conns, "settings": vals, "labels": labels, "chatgpt": chatgpt.status(),
-            "presets": models.PRESETS, "port": config.PORT, "name": config.NAME, "signin": bool(config.PASSWORD)}
+            "presets": {k: {**p, "draws": k not in models.DRAWS_NOT and k not in models.TURNS} for k, p in models.PRESETS.items()},
+            "port": config.PORT, "name": config.NAME, "signin": bool(config.PASSWORD)}
 
 
 @app.put("/api/settings")
@@ -908,9 +909,9 @@ def delete_connection(cid: int):
 
 
 @app.get("/api/connections/{cid}/models")
-async def connection_models(cid: int, fresh: int = 0):
+async def connection_models(cid: int, fresh: int = 0, kind: str = "text"):
     try:
-        return await models.available(cid, fresh=bool(fresh))
+        return await models.available(cid, fresh=bool(fresh), kind="image" if kind == "image" else "text")
     except models.ModelError as e:
         return JSONResponse({"error": e.code, "detail": e.detail}, status_code=502)
 

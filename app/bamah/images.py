@@ -1,8 +1,10 @@
 """Portraits: a picture made from a character's appearance, by whichever image model is picked in Settings.
 
+- OpenRouter: its Image API (/images), asking for the portrait's shape and a modest size from what
+  the model takes, as its image model list says.
 - OpenAI and Gemini: their images endpoint (/images/generations).
-- OpenRouter and other OpenAI-style services: a chat request that asks for an image back
-  (modalities: image), which is how OpenRouter serves its image models.
+- Other OpenAI-style services, and an OpenRouter model that isn't on its image list: a chat request
+  that asks for an image back (modalities: image).
 """
 
 import base64
@@ -40,9 +42,28 @@ async def generate(ref: str, prompt: str) -> bytes:
     headers = {"content-type": "application/json"}
     if conn["api_key"]:
         headers["authorization"] = f"Bearer {conn['api_key']}"
+    params = None
+    if preset == "openrouter":
+        headers["x-title"] = config.NAME
+        try:
+            params = next((m["params"] for m in await models.available(s[0], kind="image") if m["id"] == model), None)
+        except ModelError:
+            params = None
     try:
         async with models._http(180) as c:
-            if preset in ("openai", "gemini"):
+            if params is not None:
+                body = {"model": model, "prompt": prompt}
+                for key, prefer in (("aspect_ratio", SHAPES), ("resolution", SIZES)):
+                    v = _choose(params.get(key), prefer)
+                    if v:
+                        body[key] = v
+                obj = _ok(await c.post(base + "/images", headers=headers, json=body))
+                for item in obj.get("data") or []:
+                    if item.get("b64_json"):
+                        return base64.b64decode(item["b64_json"])
+                    if item.get("url"):
+                        return (await c.get(item["url"])).content
+            elif preset in ("openai", "gemini"):
                 r = await c.post(base + "/images/generations", headers=headers,
                                  json={"model": model, "prompt": prompt, "n": 1, "size": "1024x1024"})
                 obj = _ok(r)
@@ -52,8 +73,6 @@ async def generate(ref: str, prompt: str) -> bytes:
                 if item.get("url"):
                     return (await c.get(item["url"])).content
             else:
-                if preset == "openrouter":
-                    headers["x-title"] = config.NAME
                 r = await c.post(base + "/chat/completions", headers=headers,
                                  json={"model": model, "modalities": ["image", "text"],
                                        "messages": [{"role": "user", "content": prompt}]})
@@ -68,6 +87,18 @@ async def generate(ref: str, prompt: str) -> bytes:
     except httpx.TransportError as e:
         raise ModelError("network", str(e)) from e
     raise ModelError("empty", "no picture came back")
+
+
+SHAPES = ("4:5", "3:4", "2:3", "1:1")          # portraits are shown 4:5
+SIZES = ("1K", "1.5K", "2K", "768", "4K")       # big enough, and the cheapest that is
+
+
+def _choose(param, prefer) -> str | None:
+    """The first of `prefer` the model takes, or None to leave it to the model."""
+    if not isinstance(param, dict):
+        return None
+    values = param.get("values") or []
+    return next((v for v in prefer if v in values), None)
 
 
 def _ok(r: httpx.Response) -> dict:

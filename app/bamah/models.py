@@ -293,15 +293,22 @@ async def _chatgpt(conn, model, system, messages):
 
 # --- Listing what a connection offers ---------------------------------------------------------
 
-async def available(conn_id: int, fresh: bool = False) -> list[dict]:
-    """[{"id", "name"}] for the model picker, kept for an hour."""
-    hit = _model_lists.get(conn_id)
+DRAWS_NOT = ("anthropic", "chatgpt")     # connections that can't make pictures (nor can those in TURNS)
+
+
+async def available(conn_id: int, fresh: bool = False, kind: str = "text") -> list[dict]:
+    """[{"id", "name"}] for the model picker, kept for an hour. kind "image": the ones that make pictures."""
+    hit = _model_lists.get((conn_id, kind))
     if hit and not fresh and time.time() - hit[0] < 3600:
         return hit[1]
     conn = connection(conn_id)
     out: list[dict] = []
     if conn["preset"] in TURNS:
         return []
+    if kind == "image":
+        out = await _image_models(conn, conn_id, fresh)
+        _model_lists[(conn_id, kind)] = (time.time(), out)
+        return out
     if conn["preset"] == "anthropic":
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=conn["api_key"], max_retries=1)
@@ -342,12 +349,39 @@ async def available(conn_id: int, fresh: bool = False) -> list[dict]:
                 entry["reasoning"] = m.get("reasoning") or ({} if thinks else None)
             out.append(entry)
         out.sort(key=lambda m: m["id"])
-    _model_lists[conn_id] = (time.time(), out)
+    _model_lists[(conn_id, kind)] = (time.time(), out)
     return out
 
 
+async def _image_models(conn, conn_id: int, fresh: bool) -> list[dict]:
+    """OpenRouter has its own list of image models, with what each one takes (see images.py). OpenAI and
+    Gemini name theirs plainly. Anything else might be either, so it gets the whole list."""
+    preset = conn["preset"]
+    if preset in DRAWS_NOT:
+        return []
+    if preset == "openrouter":
+        base = (conn["base_url"] or "").rstrip("/")
+        try:
+            async with _http(30) as c:
+                r = await c.get(base + "/images/models", headers={"x-title": config.NAME})
+        except httpx.TransportError as e:
+            raise ModelError("network", str(e)) from e
+        if r.status_code >= 400:
+            raise ModelError(_status(r.status_code), _detail(r.text))
+        out = [{"id": m["id"], "name": m.get("name") or m["id"], "params": m.get("supported_parameters") or {}}
+               for m in r.json().get("data") or [] if m.get("id")]
+        return sorted(out, key=lambda m: m["name"].lower())
+    every = await available(conn_id, fresh)
+    if preset == "openai":
+        return [m for m in every if "image" in m["id"] or "dall-e" in m["id"]]
+    if preset == "gemini":
+        return [m for m in every if "image" in m["id"] or "imagen" in m["id"]]
+    return every
+
+
 def forget(conn_id: int):
-    _model_lists.pop(conn_id, None)
+    for kind in ("text", "image"):
+        _model_lists.pop((conn_id, kind), None)
 
 
 # Private add-ons that live only on one server (git ignores bamah/extras). They register their own

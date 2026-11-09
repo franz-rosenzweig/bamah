@@ -194,22 +194,24 @@ async function getSettings(fresh) {
 }
 
 // Pick a model: a connection, then one of its models (or a typed name). Resolves to "id/model", '' (default) or null.
-function pickModel(title, {allowDefault, defaultLabel = 'Default'} = {}) {
+function pickModel(title, {allowDefault, defaultLabel = 'Default', images = false} = {}) {
   return new Promise(async (done) => {
     const s = await getSettings(true);
+    const conns = images ? s.connections.filter((c) => s.presets[c.preset]?.draws !== false) : s.connections;
     sheet((box, close) => {
       const finish = (v) => { close(); done(v); };
       box.append(h('h2', {}, title));
-      if (!s.connections.length) {
+      if (!conns.length) {
         box.append(h('div', {class: 'foot'}, h('a', {class: 'btn primary', href: '#/settings', onclick: () => finish(null)}, 'Settings')));
         return;
       }
       const body = h('div');
       const list = h('div', {class: 'menu'});
       if (allowDefault) list.append(h('button', {onclick: () => finish('')}, defaultLabel));
-      for (const c of s.connections) list.append(h('button', {onclick: () => open(c)}, c.name));
+      for (const c of conns) list.append(h('button', {onclick: () => open(c)}, c.name));
       body.append(list);
       box.append(body);
+      if (conns.length === 1 && !allowDefault) open(conns[0]);
       async function open(c) {
         body.innerHTML = '';
         const search = h('input', {type: 'search', placeholder: s.presets[c.preset]?.model_label || 'Model'});
@@ -218,7 +220,7 @@ function pickModel(title, {allowDefault, defaultLabel = 'Default'} = {}) {
         body.append(h('div', {class: 'row'}, ibtn('back', () => { body.innerHTML = ''; body.append(list); }, {title: 'Back'}), h('b', {}, c.name)),
           h('div', {class: 'row', style: 'margin-top:8px'}, search, typed), results);
         let all = [];
-        try { all = await GET(`/api/connections/${c.id}/models`); }
+        try { all = await GET(`/api/connections/${c.id}/models${images ? '?kind=image' : ''}`); }
         catch (e) { results.innerHTML = ''; results.append(h('div', {class: 'err', style: 'padding:10px'}, ERR[e.data?.error] || 'No list')); return; }
         const draw = () => {
           const q = search.value.trim().toLowerCase();
@@ -1271,6 +1273,11 @@ async function characterView(id) {
   const portraitBlock = () => {
     let style = 'painted';
     const gen = h('button', {class: 'btn primary grow', onclick: async () => {
+      if (!(await getSettings(true)).settings.portrait_model) {     // nothing to paint with yet: pick one here
+        const v = await pickModel('Portraits', {images: true});
+        if (!v) return;
+        await PUT('/api/settings', {portrait_model: v});
+      }
       gen.disabled = true; gen.textContent = 'Painting…';
       try { await POST(`/api/characters/${id}/portraits`, {style}); reload(); }
       catch (e) { toast(ERR[e.data?.error] || 'No portrait'); gen.disabled = false; gen.replaceChildren(icon('wand'), 'Generate'); }
@@ -1447,7 +1454,7 @@ async function settingsView() {
   wrap.append(h('h3', {}, 'Default'), h('div', {class: 'group'},
     line('Characters', modelButton(s.labels.default_model, 'Pick', async (v) => { await PUT('/api/settings', {default_model: v}); })),
     line('Memory and turn order', modelButton(s.labels.helper_model, 'Same as characters', async (v) => { await PUT('/api/settings', {helper_model: v}); }, {allowDefault: true, defaultLabel: 'Same as characters'})),
-    line('Portraits', modelButton(s.labels.portrait_model, 'Pick', async (v) => { await PUT('/api/settings', {portrait_model: v}); })),
+    line('Portraits', modelButton(s.labels.portrait_model, 'Pick', async (v) => { await PUT('/api/settings', {portrait_model: v}); }, {images: true})),
     mark(line('Thinking', seg([['off', 'Off'], ['low', 'Low'], ['high', 'High']], s.settings.thinking, set('thinking'))), 'thinking')));
 
   wrap.append(h('h3', {}, 'Memory'), h('div', {class: 'group'},
