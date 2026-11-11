@@ -46,6 +46,15 @@ function applyLook() {
   try { size = localStorage.getItem('bamah.size') || '1'; } catch (e) {}
   document.documentElement.style.setProperty('--scale', size);
   window.BamahThemes?.apply();
+  // the Mac app colours its title bar like the side list
+  requestAnimationFrame(() => {
+    const probe = document.createElement('i');
+    probe.style.cssText = 'position:fixed;width:0;height:0;background:var(--rail)';
+    document.documentElement.append(probe);
+    const bar = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    shell('look', {bar, dark: getComputedStyle(document.documentElement).colorScheme.includes('dark')});
+  });
 }
 applyLook();
 
@@ -87,6 +96,63 @@ const mark = (el, name) => { el.setAttribute('data-tour', name); return el; };
 const add = (el, ...kids) => { el.append(...kids.flat().filter((k) => k != null && k !== false)); return el; };
 
 const ibtn = (name, onclick, props = {}) => h('button', {class: 'icon', type: 'button', onclick, 'aria-label': props.title, ...props}, icon(name));
+
+// --- The desktop apps (mac/, windows/) ---------------------------------------------------------
+// Their menus call window.bamahCommand(name). The open scene puts its actions in sceneCmds, and a page
+// that takes a dropped file puts what to do with it in dropTarget; frame() clears both.
+let sceneCmds = null, dropTarget = null;
+const IN_APP = /BamahApp\//.test(navigator.userAgent);
+const SIZES = ['0.9', '1', '1.12', '1.25'];
+function textSize(step) {
+  let now = '1';
+  try { now = localStorage.getItem('bamah.size') || '1'; } catch (e) {}
+  const i = step ? Math.max(0, Math.min(SIZES.length - 1, SIZES.indexOf(now) + step)) : 1;
+  try { localStorage.setItem('bamah.size', SIZES[i]); } catch (e) {}
+  applyLook();
+}
+const COMMANDS = {
+  newStory: () => newStory(), newCharacter: () => newCharacter(), settings: () => (location.hash = '#/settings'),
+  newScene: () => sceneCmds ? sceneCmds.newScene() : railCache.story ? newSceneSheet(railCache.story) : null,
+  next: () => sceneCmds?.next(), goOn: () => sceneCmds?.goOn(), again: () => sceneCmds?.again(), stop: () => sceneCmds?.stop(),
+  writeMyLine: () => sceneCmds?.writeMyLine(), whatIf: () => sceneCmds?.whatIf(),
+  feelings: () => sceneCmds?.panel('feelings'), memory: () => sceneCmds?.panel('memory'), journal: () => sceneCmds?.panel('journal'),
+  bigger: () => textSize(1), smaller: () => textSize(-1), actualSize: () => textSize(0),
+  closeWindow: () => shell('window', {what: 'close'}), fullScreen: () => shell('window', {what: 'fullScreen'}),
+};
+window.bamahCommand = (name) => { const f = COMMANDS[name]; if (f) f(); return !!f; };
+
+// Tell the app something happened (a reply is in, so it can ping her if she's elsewhere). A browser has neither.
+function shell(kind, data = {}) {
+  try { window.webkit?.messageHandlers?.bamah?.postMessage({kind, ...data}); } catch (e) {}
+  try { window.chrome?.webview?.postMessage({kind, ...data}); } catch (e) {}
+}
+
+// The Windows app's keys. On a Mac the menu bar has them, and in a browser they'd fight the browser's own.
+const KEYS = {enter: 'next', ']': 'goOn', r: 'again', l: 'writeMyLine', 'S-w': 'whatIf', n: 'newStory', 'S-n': 'newScene',
+  1: 'feelings', 2: 'memory', 3: 'journal', ',': 'settings', '=': 'bigger', '+': 'bigger', 'S-+': 'bigger', '-': 'smaller', 0: 'actualSize',
+  w: 'closeWindow'};
+if (IN_APP && !/Mac/.test(navigator.platform)) document.addEventListener('keydown', (e) => {
+  if (e.key === 'F11') { e.preventDefault(); return bamahCommand('fullScreen'); }
+  if (e.defaultPrevented || !e.ctrlKey || e.altKey || e.metaKey) return;
+  const name = KEYS[(e.shiftKey ? 'S-' : '') + e.key.toLowerCase()];
+  if (name) { e.preventDefault(); bamahCommand(name); }
+});
+
+// A file dropped on the window: what the page in front does with it (a scene, a journal), or nothing.
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+document.addEventListener('dragover', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  document.body.classList.toggle('dropping', !!dropTarget);
+});
+document.addEventListener('dragleave', (e) => { if (!e.relatedTarget) document.body.classList.remove('dropping'); });
+document.addEventListener('drop', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  document.body.classList.remove('dropping');
+  const file = e.dataTransfer.files[0];
+  if (file && dropTarget) dropTarget(file);
+});
 
 async function api(method, url, body) {
   const r = await fetch(url, {method, headers: body ? {'content-type': 'application/json'} : {}, body: body ? JSON.stringify(body) : undefined});
@@ -274,6 +340,7 @@ let railCache = {stories: null, story: null};
 function frame(active, {scene = false, story = null, sceneId = null, filter = null, nav = null, top = null} = {}) {
   document.body.classList.toggle('in-scene', scene);
   document.body.classList.toggle('in-char', !!nav);
+  sceneCmds = dropTarget = null;
   $app.innerHTML = '';
   const side = nav || h('aside', {class: 'rail'});
   const main = h('main');
@@ -608,8 +675,8 @@ async function bringIn(target, targetId, picked = null) {
 }
 
 // A file for a journal: split into entries she looks over first, or kept whole as one.
-async function journalFile(scope, target, reload) {
-  const file = await pickFile();
+async function journalFile(scope, target, reload, picked = null) {
+  const file = picked || await pickFile();
   if (!file) return;
   menu([
     ['Split into entries', () => splitSheet(file, scope, reload)],
@@ -688,6 +755,7 @@ function journalEditor(entries, scope, reload) {
   const box = h('div', {class: 'notes'});
   const fileTarget = scope.character_id ? ['character', scope.character_id] : scope.story_id ? ['story', scope.story_id] : ['shared', 0];
   if (entries.length) box.append(journalTry(scope));
+  if (!sceneCmds) dropTarget = (file) => journalFile(scope, fileTarget, reload, file);
   const sorted = entries.slice().sort((a, b) => (b.pinned || 0) - (a.pinned || 0) || a.id - b.id);
   for (const j of sorted) {
     const on = j.enabled !== 0;
@@ -987,11 +1055,14 @@ async function sceneView(id) {
 
   // Stream turns one after the other.
   async function run(ids) {
+    let said = null;
     for (const cid of ids) {
       const ok = await stream(`/api/scenes/${id}/turn`, {character_id: cid}, {kind: 'character', character_id: cid, content: '', inner: '', temp: true, id: 'temp'});
       if (!ok) break;
+      said = people()[cid]?.name || said;
     }
     refreshFeelings();
+    if (said) shell('replied', {name: said, scene: sc.title || ''});
   }
 
   async function stream(url, body, temp, existing) {
@@ -1043,8 +1114,9 @@ async function sceneView(id) {
 
   async function redo(e, opts = {}) {
     const el = logIn.querySelector(`[data-id="${e.id}"]`);
-    await stream(`/api/events/${e.id}/redo`, opts, {content: '', inner: ''}, el);
+    const ok = await stream(`/api/events/${e.id}/redo`, opts, {content: '', inner: ''}, el);
     refreshFeelings();
+    if (ok) shell('replied', {name: people()[e.character_id]?.name || '', scene: sc.title || ''});
   }
 
   async function pickVersion(e, i) { replace(await POST(`/api/events/${e.id}/pick`, {index: i})); }
@@ -1194,15 +1266,18 @@ async function sceneView(id) {
     });
   }
 
-  function attachSheet() {
+  // A file into the scene or a journal. A dropped one going to a journal can be split into entries first.
+  function attachSheet(file = null) {
     const who = people();
+    const reloadJ = async () => { story = await GET(`/api/stories/${sc.story.id}`); drawSide(); };
     menu([
       ['This scene', async () => {
-        const out = await bringIn('scene', id);
+        const out = await bringIn('scene', id, file);
         if (out?.event) { sc.events.push(out.event); logIn.append(msgEl(out.event)); toBottom(); }
       }],
-      ...sc.here.filter((i) => who[i]).map((i) => [`${who[i].name}’s journal`, () => bringIn('character', i)]),
-      ['The story’s journal', () => bringIn('story', sc.story.id)],
+      ...sc.here.filter((i) => who[i]).map((i) => [`${who[i].name}’s journal`,
+        () => file ? journalFile({character_id: i}, ['character', i], () => {}, file) : bringIn('character', i)]),
+      ['The story’s journal', () => file ? journalFile({story_id: sc.story.id}, ['story', sc.story.id], reloadJ, file) : bringIn('story', sc.story.id)],
     ]);
   }
 
@@ -1272,6 +1347,22 @@ async function sceneView(id) {
       side.append(journalEditor((story?.journal || []).filter((j) => !j.character_id), {story_id: sc.story.id}, reloadJ));
     }
   }
+
+  // What the desktop apps' menus and keys do here (window.bamahCommand), and a file dropped on the window.
+  const whatIf = () => newSceneSheet(story || {id: sc.story.id, cast: sc.cast}, null, {whatif: true, with: sc.here});
+  sceneCmds = {
+    next: () => { if (!busy && sc.state !== 'ended') submit(); },
+    goOn: async () => {
+      if (busy || !sc.here.length || sc.state === 'ended') return;
+      const {speakers: who} = await POST(`/api/scenes/${id}/next`, {more: true}); run(who);
+    },
+    again: () => { const e = [...sc.events].reverse().find((x) => x.kind === 'character'); if (e && !busy) redo(e); },
+    writeMyLine: () => { if (!busy && sc.state !== 'ended') suggest(); },
+    whatIf, newScene: () => newSceneSheet(story || {id: sc.story.id, cast: sc.cast}),
+    panel: (tab) => { sideTab = tab; localStorage.setItem('bamah.side', tab); drawSide(); side.classList.add('open'); },
+    stop: () => stop(),
+  };
+  dropTarget = (file) => attachSheet(file);
 
   drawTop(); drawDock(); drawLog(); drawSide(); toBottom();
   if (!sc.here.length && !sc.events.length) presenceSheet();

@@ -600,3 +600,7 @@ body:has(.veil) .tour-invite, body:has(.tour) .tour-invite { visibility: hidden;
 .pickbar { display: flex; align-items: center; gap: 10px; padding: 8px 4px 10px; max-width: 760px; margin: 0 auto; }
 .checks { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .checks .card { padding: 10px 12px; }
+
+/* A file being dragged over a page that takes it (the desktop apps, and browsers too) */
+body.dropping::after { content: ""; position: fixed; inset: 10px; z-index: 70; pointer-events: none; border: 2px dashed var(--accent);
+  border-radius: 20px; background: var(--accent-soft); }

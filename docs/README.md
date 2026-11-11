@@ -16,6 +16,7 @@ These pages are how Bamah works, written down. It's a stage for the characters o
 - [Portraits](portraits.md): the library, making one, and uploading your own
 - [Models](models.md): which one to pick, connecting it, and trying a line with another
 - [Settings](settings.md): models, memory, reading comfort, the tour, and backups
+- [The Mac and Windows apps](apps.md): installing them, their keys, and what they add
 
 ### Under the hood
 - [How it works](how-it-works.md): what a character is told before every line, and what happens after it

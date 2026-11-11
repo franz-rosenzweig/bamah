@@ -6,3 +6,9 @@ __pycache__/
 .pytest_cache/
 app/bamah/extras/
 local/
+mac/build/
+mac/local.env
+windows/build/
+windows/**/bin/
+windows/**/obj/
+.DS_Store

@@ -1,0 +1,95 @@
+# The Windows app (windows/README.md), on GitHub's Windows machines: the app, its self-test
+# against a Bamah running on the same machine, and the installer, all kept with the run.
+# A tag windows-vX.Y.Z also makes the GitHub release.
+name: Windows
+on:
+  push:
+    branches: [main, apps, 'windows*']
+    tags: ['windows-v*']
+    paths: ['windows/**', 'app/bamah/**', '.github/workflows/windows.yml']
+  pull_request:
+    paths: ['windows/**', 'app/bamah/**', '.github/workflows/windows.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: The version
+        id: version
+        shell: pwsh
+        run: |
+          $v = if ($env:GITHUB_REF -like 'refs/tags/windows-v*') { $env:GITHUB_REF_NAME -replace '^windows-v', '' }
+               else { ([xml](Get-Content windows/Bamah/Bamah.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1 }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: The app builds
+        run: dotnet publish windows/Bamah/Bamah.csproj -c Release -r win-x64 -p:Platform=x64 -p:Version=${{ steps.version.outputs.version }} -o build/Bamah
+
+      - name: The self-test, against a Bamah on this machine
+        shell: pwsh
+        run: |
+          pip install -q -r app/requirements.txt
+          $env:BAMAH_DATA = "$env:RUNNER_TEMP\bamah-data"
+          $env:BAMAH_PASSWORD = ""
+          $env:BAMAH_PORT = "8498"
+          $server = Start-Process python -ArgumentList '-m', 'uvicorn', 'bamah.web:app', '--host', '127.0.0.1', '--port', '8498' `
+            -WorkingDirectory app -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP\bamah.log" -RedirectStandardError "$env:RUNNER_TEMP\bamah.err"
+          python windows/tools/seed.py http://127.0.0.1:8498
+          $out = "$PWD\build\selftest"
+          $app = Start-Process build\Bamah\Bamah.exe -PassThru -ArgumentList '--selftest', "`"$out`"", '--server', 'http://127.0.0.1:8498',
+            '--start', '#/scene/1', '--data', "`"$env:RUNNER_TEMP\bamah-app`""
+          if (-not $app.WaitForExit(240000)) { $app.Kill(); Write-Host "the self-test timed out" }
+          $server.Kill()
+          if (Test-Path "$env:RUNNER_TEMP\bamah-app\log.txt") { Get-Content "$env:RUNNER_TEMP\bamah-app\log.txt" }
+          if (-not (Test-Path "$out\log.txt")) { Write-Host "no log"; exit 1 }
+          Get-Content "$out\log.txt"
+          if (-not (Select-String -Path "$out\log.txt" -Pattern '^PASSED' -Quiet)) { exit 1 }
+
+      - name: The installer
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y | Out-Null
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DVersion=${{ steps.version.outputs.version }}" "/DSource=$PWD\build\Bamah" windows\installer.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Compress-Archive -Path build\Bamah\* -DestinationPath "build\out\Bamah-${{ steps.version.outputs.version }}-portable.zip"
+
+      # kept even when a check fails: the self-test's pictures are the evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Bamah-${{ steps.version.outputs.version }}-windows
+          path: |
+            build/out/*
+            build/selftest/*
+          if-no-files-found: warn
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/windows-v')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: The release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Bamah for Windows ${GITHUB_REF_NAME#windows-v}" \
+            --notes "Bamah for Windows. Run the Setup to install it for you alone (no administrator needed), or unzip the portable copy anywhere. Windows warns about an app from an unknown publisher the first time: More info, then Run anyway." \
+            dist/*/out/Bamah-*-Setup.exe dist/*/out/Bamah-*-portable.zip
