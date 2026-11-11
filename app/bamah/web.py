@@ -19,7 +19,8 @@ log = logging.getLogger("bamah.web")
 
 STATIC = Path(__file__).parent / "static"
 COOKIE = "bamah"
-OPEN = ("/login", "/api/login", "/static/app.css", "/static/themes.js", "/static/icon.svg", "/manifest.webmanifest", "/fonts/")
+OPEN = ("/login", "/api/login", "/static/app.css", "/static/themes.js", "/static/icon.svg", "/static/icon-180.png",
+        "/static/icon-192.png", "/static/icon-512.png", "/manifest.webmanifest", "/fonts/")
 
 @asynccontextmanager
 async def _life(_app):
@@ -375,8 +376,25 @@ async def add_journal(request: Request):
 async def edit_journal(jid: int, request: Request):
     body = await _body(request)
     with db.connect() as d:
-        _update(d, "journal", jid, body, ("title", "keys", "text"))
+        _update(d, "journal", jid, body, ("title", "keys", "text", "enabled", "pinned"))
     return {"ok": True}
+
+
+@app.post("/api/journal/try")
+async def journal_try(request: Request):
+    """Which entries a line would bring to mind, in the journal she's looking at (plus the shared one)."""
+    body = await _body(request)
+    sid, cid = body.get("story_id"), body.get("character_id")
+    with db.connect() as d:
+        if sid:
+            rows = d.execute("select * from journal where (story_id = ? or story_id is null) and character_id is null order by id", (sid,))
+        elif cid:
+            rows = d.execute("select * from journal where story_id is null and (character_id = ? or character_id is null) order by id", (cid,))
+        else:
+            rows = d.execute("select * from journal where story_id is null and character_id is null order by id")
+        hits, over = engine.journal_pick(db.rows(rows), str(body.get("text", "")))
+    name = lambda j: {"id": j["id"], "title": j["title"] or j["text"][:40]}
+    return {"hits": [name(j) for j in hits], "over": [name(j) for j in over]}
 
 
 @app.delete("/api/journal/{jid}")
@@ -1058,7 +1076,9 @@ def backup():
 def manifest():
     return JSONResponse({"name": config.NAME, "short_name": config.NAME, "start_url": "/", "display": "standalone",
                          "background_color": "#120e0f", "theme_color": "#120e0f",
-                         "icons": [{"src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml"}]})
+                         "icons": [{"src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml"},
+                                   {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                                   {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}]})
 
 
 @app.get("/static/{name}")

@@ -248,17 +248,42 @@ def same_memory(a: str, b: str) -> bool:
     return bool(wa and wb) and len(wa & wb) / len(wa | wb) >= 0.8
 
 
+UNSPACED = re.compile(r"[぀-ヿ㐀-鿿가-힯]")   # scripts written without spaces
+
+
+def _plain(text: str) -> str:
+    return text.lower().replace("’", "'")
+
+
+def mentions(key: str, low: str) -> bool:
+    """Whether a keyphrase comes up in the text, as a whole word or phrase (or its plural):
+    "Ben" comes up in "Ben's coat" but not in "bench". low is the text through _plain()."""
+    key = _plain(key)
+    if UNSPACED.search(key):
+        return key in low
+    return re.search(r"(?<!\w)" + re.escape(key) + r"(?:e?s)?(?!\w)", low) is not None
+
+
+def journal_pick(entries: list[dict], text: str, most: int = 8) -> tuple[list[dict], list[dict]]:
+    """The entries that come to mind for this text, pinned ones first, and the ones past the limit.
+    An entry that's switched off never comes to mind; one with no keyphrases always does."""
+    low = _plain(text)
+    hits = []
+    for j in entries:
+        if j.get("enabled") == 0:
+            continue
+        keys = [k.strip() for k in (j["keys"] or "").split(",") if k.strip()]
+        if not keys or any(mentions(k, low) for k in keys):
+            hits.append(j)
+    hits.sort(key=lambda j: (-(j.get("pinned") or 0), j["id"]))
+    return hits[:most], hits[most:]
+
+
 def journal_hits(d, story: dict, ch: dict, text: str, most: int = 8) -> list[dict]:
     entries = db.rows(d.execute(
         "select * from journal where (story_id is null or story_id = ?) and (character_id is null or character_id = ?) "
         "order by id", (story["id"], ch["id"])))
-    low = text.lower()
-    hits = []
-    for j in entries:
-        keys = [k.strip().lower() for k in (j["keys"] or "").split(",") if k.strip()]
-        if not keys or any(k in low for k in keys):
-            hits.append(j)
-    return hits[:most]
+    return journal_pick(entries, text, most)[0]
 
 
 def feeling_now(d, story_id: int, cid: int) -> dict | None:

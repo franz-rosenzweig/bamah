@@ -44,7 +44,7 @@ The AI companion apps are good at one character at a time, but they're expensive
 - **Faces:** a portrait library, with any picture you upload or generate from a character's appearance, photographic, painted or anime. See [Portraits](docs/portraits.md).
 - **Bring in your pages:** drop in a chapter, an outline or a backstory (Word, PDF or text), into a scene where everyone there reads it, onto one character, or into the story's journal.
 - **Ideas:** star a moment and add a note, and it goes on the Ideas list. A story exports to Markdown.
-- **Easy on the eyes:** 22 themes, each dark or light, from plain colours to rooms like a velvet theatre, a candlelit study or a starship, and a picture of your own behind any scene. The text size is per device, for long reading sessions, and it works on a phone too.
+- **Easy on the eyes:** 22 themes, each dark or light, from plain colours to rooms like a velvet theatre, a candlelit study or a starship, and a picture of your own behind any scene. The text size is per device, for long reading sessions, and it works on a phone or a tablet too.
 - **Any model:** OpenRouter (hundreds of models), OpenAI, Claude, Gemini, Ollama on your own computer, anything else that speaks the OpenAI format, or your own ChatGPT plan through "Sign in with ChatGPT". Each story and each character can use a different one, and on OpenRouter you choose how much they think before they answer. See [Models](docs/models.md).
 
 ## Screenshots

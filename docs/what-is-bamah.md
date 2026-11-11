@@ -27,6 +27,8 @@ That's all. Everything you write stays in one folder where Bamah runs: the chara
 
 Bamah works in a phone's browser too. The scene fills the screen, the faces and the writing box sit at the bottom, and the heart at the top opens the Feelings panel. Add it to the home screen and it opens like an app.
 
+On a tablet, the list of stories stays at the side. Held sideways, an iPad or a big Android tablet has room for the Feelings panel too, and upright the heart opens it.
+
 <p align="center"><img src="images/phone.webp" width="300" alt="A scene on a phone"> <img src="images/phone-feelings.webp" width="300" alt="Feelings on a phone"></p>
 
 <sub>Next: [Characters](characters.md)</sub>

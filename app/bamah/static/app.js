@@ -664,13 +664,38 @@ async function splitSheet(file, scope, reload) {
   });
 }
 
+// Try a line: which of these entries it would bring to mind. Past the limit, the ones left out are struck through.
+function journalTry(scope) {
+  const input = h('input', {type: 'search', placeholder: 'Try a line'});
+  const out = h('div', {class: 'tryhits'});
+  let t, n = 0;
+  input.addEventListener('input', () => {
+    clearTimeout(t);
+    t = setTimeout(async () => {
+      const text = input.value.trim(), mine = ++n;
+      if (!text) return out.replaceChildren();
+      const r = await POST('/api/journal/try', {...scope, text});
+      if (mine !== n) return;
+      out.replaceChildren(...r.hits.map((x) => h('span', {class: 'jchip'}, x.title)),
+        ...r.over.map((x) => h('span', {class: 'jchip over'}, x.title)),
+        r.hits.length || r.over.length ? '' : h('span', {class: 'muted small'}, '—'));
+    }, 250);
+  });
+  return h('div', {class: 'jtry'}, h('label', {class: 'search'}, icon('search'), input), out);
+}
+
 function journalEditor(entries, scope, reload) {
   const box = h('div', {class: 'notes'});
   const fileTarget = scope.character_id ? ['character', scope.character_id] : scope.story_id ? ['story', scope.story_id] : ['shared', 0];
-  for (const j of entries) {
-    const view = h('div', {class: 'grow', style: 'padding-top:6px'}, h('div', {}, h('b', {}, j.title || ''), j.keys ? h('span', {class: 'meta'}, '  ' + j.keys) : null),
-      h('div', {class: 'text', style: 'padding-top:2px'}, j.text));
-    const note = h('div', {class: 'note'}, view,
+  if (entries.length) box.append(journalTry(scope));
+  const sorted = entries.slice().sort((a, b) => (b.pinned || 0) - (a.pinned || 0) || a.id - b.id);
+  for (const j of sorted) {
+    const on = j.enabled !== 0;
+    const note = h('div', {class: `note jnote ${j.pinned ? 'pinned' : ''} ${on ? '' : 'off'}`});
+    note.append(h('div', {class: 'jhead'}, h('div', {class: 'grow'}, h('b', {}, j.title || ''), j.keys ? h('span', {class: 'meta'}, '  ' + j.keys) : null),
+      ibtn('pin', async () => { await PATCH(`/api/journal/${j.id}`, {pinned: j.pinned ? 0 : 1}); reload(); }, {class: `icon ${j.pinned ? 'on' : ''}`, title: 'Pin'}),
+      h('button', {class: `switch ${on ? 'on' : ''}`, type: 'button', role: 'switch', 'aria-checked': String(on), 'aria-label': 'On',
+        onclick: async () => { await PATCH(`/api/journal/${j.id}`, {enabled: on ? 0 : 1}); reload(); }}),
       ibtn('edit', () => {
         const t = h('input', {value: j.title, placeholder: 'Title'}), k = h('input', {value: j.keys, placeholder: 'Keyphrases'}), x = h('textarea', {value: j.text});
         note.innerHTML = '';
@@ -679,7 +704,8 @@ function journalEditor(entries, scope, reload) {
             h('button', {class: 'btn small', onclick: reload}, 'Cancel'),
             h('button', {class: 'btn small primary', onclick: async () => { await PATCH(`/api/journal/${j.id}`, {title: t.value, keys: k.value, text: x.value}); reload(); }}, 'Save'))));
       }, {title: 'Edit'}),
-      ibtn('trash', async () => { await DEL(`/api/journal/${j.id}`); reload(); }, {title: 'Delete'}));
+      ibtn('trash', async () => { await DEL(`/api/journal/${j.id}`); reload(); }, {title: 'Delete'})),
+      h('div', {class: 'text'}, j.text));
     box.append(note);
   }
   const t = h('input', {placeholder: 'Title'}), k = h('input', {placeholder: 'Keyphrases'}), x = h('textarea', {placeholder: 'Entry'});
@@ -1724,7 +1750,7 @@ const STEPS = [
     text: 'The circle arrow asks for a new take. The thumbs down lets you say what they’d really do, and can keep it as a correction for next time. The crossed arrows try the line with another model.'},
   {title: 'Who speaks next', at: at(/^#\/scene\/\d+/), target: () => pick('[data-tour=speakers]'),
     text: 'Tap a face to have that character answer, or Go on to let the scene decide.'},
-  {title: 'How they feel', at: at(/^#\/scene\/\d+/), target: () => innerWidth >= 1280 ? pick('[data-tour=feelings]') : pick('[data-tour=feelings-btn]'),
+  {title: 'How they feel', at: at(/^#\/scene\/\d+/), target: () => innerWidth >= 1100 ? pick('[data-tour=feelings]') : pick('[data-tour=feelings-btn]'),
     text: 'After every line, each character’s mood and feelings toward the others are updated here. The bars show how strongly they feel it.'},
   {title: 'What if', at: at(/^#\/scene\/\d+/), target: () => pick('[data-tour=whatif]', '[data-tour=scene-menu]'),
     text: 'A what-if scene is a sketch. Nothing in it is remembered unless you decide it counts.'},

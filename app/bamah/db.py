@@ -218,6 +218,8 @@ COLUMNS = [
     ("memory", "last_recalled", "text"),
     ("memory", "from_seq", "integer"),               # the lines of its scene it was written from
     ("memory", "to_seq", "integer"),
+    ("journal", "enabled", "integer default 1"),   # switched off: kept, but never comes to mind
+    ("journal", "pinned", "integer default 0"),    # comes first when more than the limit come to mind
 ]
 
 DEFAULTS = {"short_term": "60000", "recall": "6", "feelings": "1", "round": "3", "repetition": "1", "thinking": "low"}

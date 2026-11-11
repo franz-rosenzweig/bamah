@@ -35,7 +35,7 @@ A story can instead be set so **Everyone knows everything**, under **Setup › M
 2. **Memories:** when older lines fall out of short-term, and when a scene ends, each character writes down what they'll remember of it, in a few lines from their own point of view. Before every reply, the memories that match what's happening come back to them (**Memories recalled per reply**).
 3. **Come to know:** running notes on what they've learned in this story, about the others and the situation, rewritten as they go.
 4. **Always remembers** on their sheet, which is always there.
-5. **Journal entries** that come to mind when one of their keyphrases comes up.
+5. **Journal entries** that come to mind when one of their keyphrases comes up, as a whole word. See [Their journal](characters.md#their-journal).
 
 All of it is on the character's **Memory** page, per story: the notes under **Come to know**, and the memories, which you can edit, pin so they always come back, delete, or add to by hand.
 

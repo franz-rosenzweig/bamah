@@ -48,6 +48,8 @@ A thumbs up keeps a line as an example of how they sound. Those are under **Soun
 
 The **Journal** is notes that come to mind when one of their keyphrases comes up in a scene: a person's name, a place, an object. Each entry has a title, keyphrases separated by commas, and the note itself. **File** brings in a Word document, PDF or text file, like a backstory you've already written, either **As one entry** or **Split into entries**. See [Feelings and memory](feelings-and-memory.md#journal-entries-from-your-pages).
 
+A keyphrase counts as a whole word, or its plural, so "Ben" brings up Ben's entry when someone says "Ben's coat" but not "bench". An entry with no keyphrases is always in mind. At most eight entries come to mind at once. The pin puts an entry ahead of the others when more than eight come up, and the switch beside it takes an entry out of mind without deleting it. **Try a line**, above the entries, shows which ones a sentence would bring up, without asking a model anything. Entries it would leave out because there are more than eight show struck through.
+
 A story has a journal of its own for things everyone in it would know, and **Settings** has a shared journal for every story.
 
 ## Their model
