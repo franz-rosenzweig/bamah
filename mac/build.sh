@@ -24,7 +24,7 @@ if [[ -n ${BAMAH_SELFTEST:-} ]]; then SRC+=(SelfTest/SelfTest.swift); FLAGS+=(-D
 # Apple silicon and Intel both
 for arch in arm64 x86_64; do
     swiftc -O -wmo -sdk "$(xcrun --show-sdk-path)" -target $arch-apple-macos$MACOS -swift-version 5 \
-        -parse-as-library -module-name Bamah $FLAGS $SRC -o $OUT/Bamah-$arch
+        -parse-as-library -module-name Bamah -enable-upcoming-feature ConciseMagicFile $FLAGS $SRC -o $OUT/Bamah-$arch
 done
 lipo -create $OUT/Bamah-arm64 $OUT/Bamah-x86_64 -output $APP/Contents/MacOS/Bamah
 rm -f $OUT/Bamah-arm64 $OUT/Bamah-x86_64
@@ -43,4 +43,6 @@ iconutil -c icns $SET -o $APP/Contents/Resources/AppIcon.icns
 rm -rf $SET
 
 codesign --force --options runtime --entitlements Bamah.entitlements --sign "${BAMAH_SIGN:--}" $APP
+# nothing of the computer that built it: no home folder's path in the app
+! grep -r -l -a "/Users/" $APP >/dev/null || { echo "a home folder's path is in the app" >&2; exit 1; }
 echo "built $APP ($VERSION)"
