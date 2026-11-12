@@ -380,13 +380,15 @@ function drawRail(rail, active, storyId, sceneId, filter) {
     for (const s of stories) {
       const open = String(s.id) === String(storyId);
       const text = [s.title, ...(open && railCache.story?.scenes || []).map((x) => x.title)].join(' ').toLowerCase();
-      list.append(h('a', {class: `ritem ${open ? 'on' : ''}`, href: `#/story/${s.id}`, 'data-text': text},
+      list.append(h('a', {class: `ritem ${open ? 'on' : ''}`, href: `#/story/${s.id}`, 'data-text': text,
+        oncontextmenu: rightClick(() => [['Delete story', () => deleteStory(s), 'danger']])},
         s.cast.length ? stack(s.cast.slice(0, 3), 'sm') : null, h('span', {class: 'grow'}, s.title || 'Untitled'),
         open ? icon('chev') : null));
       if (open && railCache.story && String(railCache.story.id) === String(s.id)) {
         const scenes = [...railCache.story.scenes].reverse();
         list.append(h('div', {class: 'rscenes', 'data-text': text},
-          scenes.map((sc, i) => h('a', {class: `rscene ${String(sc.id) === String(sceneId) ? 'on' : ''}`, href: `#/scene/${sc.id}`},
+          scenes.map((sc, i) => h('a', {class: `rscene ${String(sc.id) === String(sceneId) ? 'on' : ''}`, href: `#/scene/${sc.id}`,
+            oncontextmenu: rightClick(() => [[sc.whatif ? 'Throw away' : 'Delete scene', () => deleteScene(sc, s.id), 'danger']])},
             h('span', {class: 'no'}, i + 1), h('span', {class: 't'}, sc.title || 'Untitled'), sc.whatif ? h('span', {class: 'badge whatif'}, 'What if') : null)),
           h('button', {class: 'rscene add', style: 'border:0;background:transparent;text-align:left', onclick: () => newSceneSheet(railCache.story)},
             h('span', {class: 'no'}, icon('plus')), h('span', {class: 't'}, 'New scene'))));
@@ -434,6 +436,36 @@ async function route() {
 }
 window.addEventListener('hashchange', route);
 
+// --- Deleting ---------------------------------------------------------------------------------
+// From wherever a story, a scene or a character shows: its ⋯ menu, or a right-click in the side list.
+
+const onPage = (path) => location.hash === path || location.hash.startsWith(path + '?');
+const moreBtn = (items) => ibtn('more', (e) => { e.preventDefault(); e.stopPropagation(); menu(items()); }, {title: 'More', class: 'icon more'});
+const rightClick = (items) => (e) => { e.preventDefault(); menu(items()); };
+
+async function deleteStory(s) {
+  if (!(await ask(`Delete “${s.title || 'Untitled'}”, with its scenes?`))) return;
+  await DEL(`/api/stories/${s.id}`);
+  const gone = onPage(`#/story/${s.id}`) || (/^#\/scene\//.test(location.hash) && String(railCache.story?.id) === String(s.id));
+  if (gone && location.hash !== '#/') location.hash = '#/';
+  else route();
+}
+
+async function deleteScene(sc, storyId) {
+  if (!(await ask(sc.whatif ? 'Throw away this scene?' : `Delete “${sc.title || 'Untitled'}” and what they remember of it?`,
+    sc.whatif ? 'Throw away' : 'Delete'))) return;
+  await DEL(`/api/scenes/${sc.id}`);
+  if (onPage(`#/scene/${sc.id}`)) location.hash = `#/story/${storyId}`;
+  else route();
+}
+
+async function deleteCharacter(c) {
+  if (!(await ask(`Delete ${c.name}?`))) return;
+  await DEL(`/api/characters/${c.id}`);
+  if (onPage(`#/character/${c.id}`)) location.hash = '#/characters';
+  else route();
+}
+
 // --- Stories ----------------------------------------------------------------------------------
 
 async function newStory() {
@@ -448,6 +480,7 @@ async function storiesView() {
   main.append(h('div', {class: 'head'}, h('h1', {}, 'Stories'), h('button', {class: 'btn primary', 'data-tour': 'new-story', onclick: newStory}, icon('plus'), 'New story')));
   if (!list.length) return main.append(h('div', {class: 'empty'}, h('button', {class: 'btn primary', onclick: newStory}, 'New story')));
   main.append(h('div', {class: 'scards'}, list.map((s) => h('a', {class: 'scard', href: `#/story/${s.id}`},
+    moreBtn(() => [['Delete story', () => deleteStory(s), 'danger']]),
     s.cast.length ? h('div', {class: 'stack'}, s.cast.slice(0, 6).map((c) => portrait(c, 'width:44px;height:56px'))) : null,
     h('div', {class: 't'}, s.title || 'Untitled'),
     s.premise ? h('div', {class: 's'}, s.premise) : null,
@@ -462,7 +495,8 @@ async function storyView(id, tab) {
   const save = saver(`/api/stories/${id}`);
   const title = h('input', {class: 'title-input', value: s.title, 'aria-label': 'Title', oninput: () => save({title: title.value})});
   main.append(h('div', {class: 'story-head'}, h('div', {class: 'grow'}, title),
-    tab === 'scenes' ? h('button', {class: 'btn primary', 'data-tour': 'new-scene', onclick: () => newSceneSheet(s)}, icon('plus'), 'New scene') : null));
+    tab === 'scenes' ? h('button', {class: 'btn primary', 'data-tour': 'new-scene', onclick: () => newSceneSheet(s)}, icon('plus'), 'New scene') : null,
+    moreBtn(() => [['Export', () => { location.href = `/api/stories/${s.id}/export`; }], ['Delete story', () => deleteStory(s), 'danger']])));
   const tabs = [['scenes', 'Scenes'], ['feelings', 'Feelings'], ['setup', 'Setup'], ['journal', 'Journal']];
   const body = h('div');
   const bar = h('div', {class: 'pills quiet', style: 'max-width:460px;margin-bottom:20px'}, tabs.map(([k, label]) => h('button', {class: k === tab ? 'on' : '', onclick: () => {
@@ -481,7 +515,8 @@ function storyScenes(s, body) {
     h('div', {class: 'grow'}, h('div', {class: 't'}, sc.title || 'Untitled'), sc.setting ? h('div', {class: 's'}, sc.setting) : null),
     sc.whatif ? h('span', {class: 'badge whatif'}, 'What if') : null,
     sc.state === 'ended' ? h('span', {class: 'badge'}, 'Ended') : null,
-    stack(sc.everyone.map((i) => people[i]).filter(Boolean))))));
+    stack(sc.everyone.map((i) => people[i]).filter(Boolean)),
+    moreBtn(() => [[sc.whatif ? 'Throw away' : 'Delete scene', () => deleteScene(sc, s.id), 'danger']])))));
 }
 
 // opts.whatif: start it as a what-if; opts.with: who to pick to begin with.
@@ -626,7 +661,7 @@ function storySetup(s, body, save) {
   wrap.append(h('h3', {}, 'Story'), h('div', {class: 'row wrap'},
     h('a', {class: 'btn', href: `/api/stories/${s.id}/export`, download: ''}, 'Export'),
     h('button', {class: 'btn danger', onclick: async () => {
-      if (await ask(`Delete “${s.title}”?`)) { await DEL(`/api/stories/${s.id}`); location.hash = '#/'; }
+      await deleteStory(s);
     }}, 'Delete story')));
   body.append(wrap);
 }
@@ -1293,9 +1328,7 @@ async function sceneView(id) {
   function sceneMenu() {
     menu([
       sc.whatif ? ['Make it count', async () => { await PATCH(`/api/scenes/${id}`, {whatif: false}); reload(); }] : null,
-      sc.whatif ? ['Throw it away', async () => {
-        if (await ask('Throw away this scene?', 'Throw away')) { await DEL(`/api/scenes/${id}`); location.hash = `#/story/${sc.story.id}`; }
-      }, 'danger'] : null,
+      sc.whatif ? ['Throw it away', () => deleteScene(sc, sc.story.id), 'danger'] : null,
       ['Scene', editScene],
       ["Who's here", presenceSheet],
       ['What if', () => newSceneSheet(story || {id: sc.story.id, cast: sc.cast}, null, {whatif: true, with: sc.here})],
@@ -1309,9 +1342,7 @@ async function sceneView(id) {
       ['Story', () => (location.hash = `#/story/${sc.story.id}`)],
       sc.state === 'ended' ? ['Reopen scene', async () => { await POST(`/api/scenes/${id}/reopen`); reload(); }]
         : ['End scene', async () => { toast('Writing memories…'); await POST(`/api/scenes/${id}/end`); reload(); }],
-      sc.whatif ? null : ['Delete scene', async () => {
-        if (await ask('Delete this scene and what they remember of it?')) { await DEL(`/api/scenes/${id}`); location.hash = `#/story/${sc.story.id}`; }
-      }, 'danger'],
+      sc.whatif ? null : ['Delete scene', () => deleteScene(sc, sc.story.id), 'danger'],
     ]);
   }
 
@@ -1390,7 +1421,8 @@ async function charactersView() {
     grid.append(h('a', {class: 'pcard', href: `#/character/${c.id}`, 'data-text': `${c.name} ${c.personality || ''}`.toLowerCase()},
       h('div', {class: 'pimg', style: c.avatar ? '' : `background:${hue(c)}`},
         c.avatar ? h('img', {src: `/avatars/${c.avatar}`, alt: '', loading: 'lazy'}) : h('span', {class: 'letter'}, initial(c.name)),
-        c.model_label ? h('span', {class: 'tag'}, shortModel(c.model_label)) : null),
+        c.model_label ? h('span', {class: 'tag'}, shortModel(c.model_label)) : null,
+        moreBtn(() => [['Delete character', () => deleteCharacter(c), 'danger']])),
       h('div', {class: 'pmeta'},
         h('div', {class: 'pname'}, h('b', {}, c.name), c.pronouns ? h('span', {}, c.pronouns) : null),
         c.personality ? h('div', {class: 'pline'}, c.personality) : null,
@@ -1485,7 +1517,8 @@ async function characterView(id) {
   const backTo = () => (history.length > 1 ? history.back() : (location.hash = '#/characters'));
   const nav = h('aside', {class: 'cnav'},
     h('a', {class: 'back', href: '#/characters'}, icon('back'), 'Characters'),
-    h('div', {class: 'me'}, avatar(c, 'lg'), h('div', {}, h('b', {}, c.name), c.pronouns ? h('span', {}, c.pronouns) : null)),
+    h('div', {class: 'me'}, avatar(c, 'lg'), h('div', {class: 'grow'}, h('b', {}, c.name), c.pronouns ? h('span', {}, c.pronouns) : null),
+      moreBtn(() => [['Delete character', () => deleteCharacter(c), 'danger']])),
     h('nav', {}, SECTIONS.map(([k, label, ic]) => h('a', {href: go(k), class: k === sec ? 'on' : ''}, icon(ic), label))));
   const main = frame('characters', {nav});
   main.style.cssText = 'max-width:none;padding:0;display:flex';
@@ -1498,7 +1531,8 @@ async function characterView(id) {
   }});
   const body = h('div', {class: 'cbody'});
   body.append(file,
-    h('div', {class: 'cmhead'}, ibtn('back', backTo, {title: 'Back'}), avatar(c, 'md'), h('b', {class: 'grow'}, c.name)),
+    h('div', {class: 'cmhead'}, ibtn('back', backTo, {title: 'Back'}), avatar(c, 'md'), h('b', {class: 'grow'}, c.name),
+      moreBtn(() => [['Delete character', () => deleteCharacter(c), 'danger']])),
     h('nav', {class: 'csecs'}, SECTIONS.map(([k, label]) => h('a', {href: go(k), class: k === sec ? 'on' : ''}, label))));
   const inner = h('div', {class: 'cbody-in'});
   body.append(inner);
@@ -1631,9 +1665,7 @@ async function characterView(id) {
     col.append(h('h1', {style: 'margin:0'}, 'Model'),
       h('div', {class: 'group'}, line('Model', modelButton(c.model ? c.model.split('/').slice(1).join('/') : '', "Story's model",
         (v) => PATCH(`/api/characters/${id}`, {model: v || null}), {allowDefault: true, defaultLabel: "Story's model"}))),
-      h('div', {style: 'margin-top:28px'}, h('button', {class: 'btn danger', onclick: async () => {
-        if (await ask(`Delete ${c.name}?`)) { await DEL(`/api/characters/${id}`); location.hash = '#/characters'; }
-      }}, 'Delete character')));
+      h('div', {style: 'margin-top:28px'}, h('button', {class: 'btn danger', onclick: () => deleteCharacter(c)}, 'Delete character')));
   }
 }
 

@@ -639,7 +639,10 @@ async def edit_story(sid: int, request: Request):
 @app.delete("/api/stories/{sid}")
 def delete_story(sid: int):
     with db.connect() as d:
+        bgs = [r["background"] for r in d.execute("select background from scene where story_id = ? and background != ''", (sid,))]
         d.execute("delete from story where id = ?", (sid,))
+    for bg in bgs:
+        _drop_background(bg)
     return {"ok": True}
 
 

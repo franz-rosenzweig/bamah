@@ -46,6 +46,35 @@ def button(label: str, href: str) -> str:
 </td></tr></table>"""
 
 
+RULE = f'<div style="height:1px;background:{C["rule"]};margin:28px 0 22px;line-height:1px;font-size:0">&nbsp;</div>'
+
+# A scene the way Bamah shows one: its dark colours, a setting, then each line with what the
+# character feels and doesn't say above it.
+S = {"bg": "#120E0F", "card": "#1D1718", "line": "#2A2324", "line_2": "#342B2C", "ink": "#F2EAE7",
+     "muted": "#B9ACA8", "faint": "#8F817D", "inner": "#231D21", "inner_ink": "#D9C1E0"}
+
+
+def _line(initial: str, hue: str, name: str, mood: str, inner: str, said: str) -> str:
+    return f"""<tr><td valign="top" width="34" style="width:34px;padding:0 12px 18px 0">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" width="34" height="34" bgcolor="{hue}" style="width:34px;height:34px;border-radius:17px;background:{hue};font-family:{UI};font-size:14px;font-weight:700;color:#FFFFFF">{esc(initial)}</td></tr></table></td>
+<td valign="top" style="padding:0 0 18px">
+<div style="font-family:{UI};font-size:14px;font-weight:600;color:{S['ink']};margin:0 0 7px">{esc(name)} <span style="font-family:{PROSE};font-style:italic;font-weight:400;font-size:13px;color:{S['muted']}">{esc(mood)}</span></div>
+<div style="font-family:{PROSE};font-style:italic;font-size:14px;line-height:1.5;color:{S['inner_ink']};background:{S['inner']};border-radius:10px;padding:8px 12px;margin:0 0 7px">{esc(inner)}</div>
+<div style="font-family:{PROSE};font-size:16px;line-height:1.55;color:{S['ink']};background:{S['card']};border:1px solid {S['line']};border-radius:4px 16px 16px 16px;padding:10px 15px">{esc(said)}</div>
+</td></tr>"""
+
+
+def scene() -> str:
+    return f"""{RULE}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="{S['bg']}" style="background:{S['bg']};border-radius:14px">
+<tr><td style="padding:20px 20px 4px">
+<div style="font-family:{PROSE};font-style:italic;font-size:14px;line-height:1.55;color:{S['muted']};padding:0 0 14px;margin:0 0 18px;border-bottom:1px dashed {S['line_2']}">The kitchen, after midnight. The letter is still on the table.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+{_line("M", "#7A5A93", "Mara", "prickly", "She's been waiting all night for him to bring it up.", "You're late.")}
+{_line("B", "#3F7363", "Ben", "guarded", "He knows she found it. He decides to wait her out.", "Traffic. You know how it is.")}
+</table></td></tr></table>
+{small("Every reply starts with what the character feels and won't say, and every line remembers who was in the room.")}"""
+
+
 def shell(*, url: str, preheader: str, body: str, footer: str) -> str:
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>Bamah</title></head>
@@ -98,7 +127,7 @@ def invite(*, name: str, email: str, url: str, signature: str, stories: bool = T
              "From now on, what you write there is yours alone: your scenes, your characters and your models."
              if stories else
              "It starts empty, with the models already set up, and what you write there is yours alone.")
-    how = (f"Sign in with <b style='color:{C['ink']}'>{esc(email)}</b>. You'll get a 6-digit code by email, so "
+    how = (f"Sign in with <b style='color:{C['ink']}'>{esc(email)}</b>. You'll get a 6&#8209;digit code by email, so "
            "there's no password to remember. If you'd rather have one, you can set it in Settings, under People.")
     html = shell(
         url=url,
@@ -109,6 +138,7 @@ def invite(*, name: str, email: str, url: str, signature: str, stories: bool = T
 {para(f"I made you a profile of your own on <b style='color:{C['ink']}'>Bamah</b>, the place for developing a story's characters by putting them in scenes together. {esc(start)}")}
 {button('Open Bamah', url)}
 {small(how)}
+{scene()}
 {para(f"If anything doesn't work, just reply to this email and let me know.<br>{esc(signature)}", "margin:22px 0 0")}""")
     text = f"""{hi}
 

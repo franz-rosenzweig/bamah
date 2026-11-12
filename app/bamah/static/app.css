@@ -604,3 +604,13 @@ body:has(.veil) .tour-invite, body:has(.tour) .tour-invite { visibility: hidden;
 /* A file being dragged over a page that takes it (the desktop apps, and browsers too) */
 body.dropping::after { content: ""; position: fixed; inset: 10px; z-index: 70; pointer-events: none; border: 2px dashed var(--accent);
   border-radius: 20px; background: var(--accent-soft); }
+
+/* ⋯ on a story or character card: in the corner, shown on hover (always, on a touch screen) */
+.scard, .pcard { position: relative; }
+.scard > .more, .pimg > .more { position: absolute; top: 8px; right: 8px; z-index: 2; width: 32px; height: 32px; border-radius: 10px;
+  background: rgba(10, 7, 7, .55); color: #fff; opacity: 0; transition: opacity .15s; }
+.scard > .more:hover, .pimg > .more:hover { background: rgba(10, 7, 7, .75); color: #fff; }
+.scard:hover > .more, .pcard:hover .pimg > .more, .more:focus-visible { opacity: 1; }
+@media (hover: none) { .scard > .more, .pimg > .more { opacity: 1; } }
+.list .item > .more { flex: none; margin-right: -6px; }
+.cnav .me .more, .cmhead .more { flex: none; }

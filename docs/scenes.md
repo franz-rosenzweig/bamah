@@ -74,6 +74,8 @@ A what-if scene is a sketch: a confrontation, a confession, a different ending. 
 
 The **…** at the top has **Scene** (title, setting and aim), **Who's here**, **What if**, **Move to a new scene** (the people here go on together to a new scene), **Make a journal entry**, **Background**, **Hide** or **Show what they feel**, **Story**, **End scene** and **Delete scene**.
 
+You can also delete a scene from the **…** beside it in the story's list of scenes, and a whole story, with its scenes, from the **…** at the top of the story or on its card under **Stories**. On a computer, right-clicking a story or a scene in the side list does the same.
+
 **Make a journal entry** lets you tap the lines that matter, then **Make entry**, and the helper writes one entry for the story's journal from them, a promise, a secret, how two people stand, for you to look over and add. If there's nothing worth keeping in them, it says so.
 
 **Background** puts a picture of your own behind the scene: a room, a street, a painting, anything that sets the mood. It's dimmed in your theme's colours, so the lines stay easy to read, on a phone too. Each scene has its own, and **Remove background** takes it away.

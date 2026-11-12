@@ -54,6 +54,6 @@ A story has a journal of its own for things everyone in it would know, and **Set
 
 ## Their model
 
-**Model** gives this character a model of their own. Otherwise they use the story's, and the story uses the default from Settings. This is also where you delete a character.
+**Model** gives this character a model of their own. Otherwise they use the story's, and the story uses the default from Settings. To delete a character, use the **…** beside their name, or the one on their card under **Characters**. Their lines stay in the scenes they were in.
 
 <sub>Next: [Stories and scenes](scenes.md)</sub>
