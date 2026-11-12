@@ -1,11 +1,11 @@
 # The Windows app (windows/README.md), on GitHub's Windows machines: the app, its self-test
 # against a Bamah running on the same machine, and the installer, all kept with the run.
-# A tag windows-vX.Y.Z also makes the GitHub release.
+# A tag vX.Y.Z also makes the GitHub release, which the Mac zip joins (mac/README.md).
 name: Windows
 on:
   push:
     branches: [main, apps, 'windows*']
-    tags: ['windows-v*']
+    tags: ['v*']
     paths: ['windows/**', 'app/bamah/**', '.github/workflows/windows.yml']
   pull_request:
     paths: ['windows/**', 'app/bamah/**', '.github/workflows/windows.yml']
@@ -31,7 +31,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $v = if ($env:GITHUB_REF -like 'refs/tags/windows-v*') { $env:GITHUB_REF_NAME -replace '^windows-v', '' }
+          $v = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME -replace '^v', '' }
                else { ([xml](Get-Content windows/Bamah/Bamah.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1 }
           "version=$v" >> $env:GITHUB_OUTPUT
 
@@ -77,7 +77,7 @@ jobs:
           if-no-files-found: warn
 
   release:
-    if: startsWith(github.ref, 'refs/tags/windows-v')
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: windows
     runs-on: ubuntu-latest
     permissions:
@@ -86,10 +86,21 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+      # made here, or added to if the Mac zip got there first
       - name: The release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Bamah for Windows ${GITHUB_REF_NAME#windows-v}" \
-            --notes "Bamah for Windows. Run the Setup to install it for you alone (no administrator needed), or unzip the portable copy anywhere. Windows warns about an app from an unknown publisher the first time: More info, then Run anyway." \
-            dist/*/out/Bamah-*-Setup.exe dist/*/out/Bamah-*-portable.zip
+          v=${GITHUB_REF_NAME#v}
+          cat > notes.md <<EOF
+          The Mac and Windows apps: the same Bamah in a window of its own. Each one asks for your Bamah's address the first time you open it.
+
+          **Mac** (macOS 13 or later, Apple silicon or Intel): download Bamah-$v-mac.zip, open it, and drag Bamah into Applications. The first time, the Mac says it can't check the app: go to System Settings › Privacy & Security and click Open Anyway.
+
+          **Windows** (10 or 11, 64-bit): run Bamah-$v-Setup.exe. It installs Bamah for you alone and doesn't need an administrator. Windows warns about an unknown publisher the first time: click More info, then Run anyway. Or unzip Bamah-$v-portable.zip anywhere and run Bamah.exe.
+
+          What the apps do: [The Mac and Windows apps](https://github.com/$GITHUB_REPOSITORY/blob/main/docs/apps.md).
+          EOF
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Bamah $v" --notes-file notes.md
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber dist/*/out/Bamah-*-Setup.exe dist/*/out/Bamah-*-portable.zip

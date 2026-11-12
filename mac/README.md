@@ -23,3 +23,13 @@ python tools/demo.py --shots /tmp/demo-shots --serve    # a filled-in demo, in t
 ```
 
 `selftest.sh` builds a copy with `SelfTest/` in it, under another bundle id so your own settings stay as they are, opens the page, works the menus, and leaves `log.txt` and pictures in `build/selftest/out`.
+
+## Releasing
+
+A release is a tag `vX.Y.Z`, the same as `VERSION` in `build.sh` and `<Version>` in the Windows project. The tag makes the GitHub release with the Windows files ([windows/README.md](../windows/README.md)). The Mac zip is built from a fresh clone of the tag, never a working copy, since a `local.env` there would build its address in, and is added to the same release:
+
+```sh
+git clone --depth 1 --branch vX.Y.Z https://github.com/franz-rosenzweig/bamah && cd bamah/mac
+BAMAH_SIGN="…" ./build.sh && ditto -c -k --keepParent build/Bamah.app Bamah-X.Y.Z-mac.zip
+gh release upload vX.Y.Z Bamah-X.Y.Z-mac.zip
+```

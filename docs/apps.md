@@ -4,6 +4,15 @@
 
 Bamah runs on a server, and you can always use it in a browser. The Mac and Windows apps are the same Bamah in a window of its own, with a menu bar, keys for everything you do in a scene, and the few things a browser tab can't do well. Your stories stay on the server, so the apps, the browser and your phone all show the same scenes.
 
+## Getting them
+
+Both are on [Bamah's Releases page](https://github.com/franz-rosenzweig/bamah/releases/latest), under **Assets**:
+
+- **On a Mac** (macOS 13 or later), download the file that ends in `-mac.zip`, open it, and drag Bamah into your Applications folder.
+- **On Windows** (10 or 11), download the one that ends in `-Setup.exe` and run it. The `-portable.zip` is the same app, to unzip anywhere without installing.
+
+A new version comes the same way: download it and put it over the old one. Your stories are on the server, so nothing is lost.
+
 ## The first time
 
 The app asks for your Bamah's address, like `bamah.example.com`. Type it and choose **Open**, then sign in as you would in a browser. The app keeps you signed in. To use another Bamah later, choose **Server…** (in the **Bamah** menu on a Mac, and in **File** on Windows).

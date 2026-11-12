@@ -15,7 +15,7 @@ dotnet publish windows/Bamah/Bamah.csproj -c Release -r win-x64 -p:Platform=x64 
 build\Bamah\Bamah.exe
 ```
 
-`-p:BamahDefaultServer=https://…` builds in the address offered the first time. The Windows workflow (`.github/workflows/windows.yml`) builds it on GitHub's Windows machines, runs the self-test against a Bamah started on the same machine (`windows/tools/seed.py` gives it a story), and makes the installer (`installer.iss`, Inno Setup) and a portable zip, kept with the run. A tag `windows-vX.Y.Z` also makes a GitHub release.
+`-p:BamahDefaultServer=https://…` builds in the address offered the first time. The Windows workflow (`.github/workflows/windows.yml`) builds it on GitHub's Windows machines, runs the self-test against a Bamah started on the same machine (`windows/tools/seed.py` gives it a story), and makes the installer (`installer.iss`, Inno Setup) and a portable zip, kept with the run. A tag `vX.Y.Z` (the `<Version>` in `Bamah.csproj`) also makes the GitHub release, and the Mac zip joins it ([mac/README.md](../mac/README.md#releasing)).
 
 ## Testing
 
