@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 
-from . import chatgpt, config, db, docs, engine, images, models, people
+from . import chatgpt, config, db, docs, engine, images, mail, models, people
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("bamah.web")
@@ -94,6 +94,24 @@ def _sign_in(request: Request, r: JSONResponse, person: dict | None = None) -> J
     return r
 
 
+def _client(request: Request) -> str:
+    return (request.headers.get("cf-connecting-ip")
+            or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+            or (request.client.host if request.client else "?"))
+
+
+STATUS = {"throttled": 429, "locked": 429, "mail": 502, "wrong": 401, "expired": 401, "login": 401, "current": 401,
+          "not-found": 404, "taken": 409, "exists": 409}
+
+
+async def _do(fn, *a, **kw):
+    """people.py's work, off the event loop (scrypt and SMTP both take a moment), its refusals as errors."""
+    try:
+        return await asyncio.to_thread(fn, *a, **kw)
+    except people.Refused as e:
+        raise HTTPException(STATUS.get(str(e), 400), str(e))
+
+
 @app.get("/login")
 def login_page():
     return FileResponse(STATIC / "login.html")
@@ -101,21 +119,34 @@ def login_page():
 
 @app.get("/api/login")
 def login_form():
-    return {"names": bool(people.load())}
+    return {"names": bool(people.load()), "mail": mail.available()}
 
 
 @app.post("/api/login")
 async def login(request: Request):
+    """A password: the shared one until there are people, then each person's own."""
     body = await _body(request)
     password = str(body.get("password", ""))
     if people.load():
-        p = people.named(str(body.get("name", "")))
-        if p and await asyncio.to_thread(people.check, p, password):
-            return _sign_in(request, JSONResponse({"ok": True}), p)
-    elif config.PASSWORD and hmac.compare_digest(password.encode(), config.PASSWORD.encode()):
+        p = await _do(people.sign_in_password, str(body.get("name", "")), password, _client(request))
+        return _sign_in(request, JSONResponse({"ok": True}), p)
+    if config.PASSWORD and hmac.compare_digest(password.encode(), config.PASSWORD.encode()):
         return _sign_in(request, JSONResponse({"ok": True}))
     await asyncio.sleep(1)
-    raise HTTPException(403, "wrong")
+    raise HTTPException(401, "login")
+
+
+@app.post("/api/login/code")
+async def login_code(request: Request):
+    body = await _body(request)
+    return await _do(people.send_code, str(body.get("who", "")), _client(request))
+
+
+@app.post("/api/login/verify")
+async def login_verify(request: Request):
+    body = await _body(request)
+    p = await _do(people.sign_in_code, str(body.get("who", "")), str(body.get("code", "")), _client(request))
+    return _sign_in(request, JSONResponse({"ok": True}), p)
 
 
 @app.post("/api/logout")
@@ -127,61 +158,90 @@ def logout():
 
 # --- People -----------------------------------------------------------------------------------
 
+def _admin(request: Request) -> dict:
+    me = _person(request)
+    if not me or not me.get("admin"):
+        raise HTTPException(403, "admin")
+    return me
+
+
 @app.get("/api/people")
 def people_list(request: Request):
     every = people.load()
     if not every:
-        return {"on": False, "me": None, "people": []}
+        return {"on": False, "me": None, "people": [], "mail": mail.available()}
     me = _person(request)
-    return {"on": True, "me": people.public(me),
+    return {"on": True, "me": people.public(me), "mail": mail.available(),
             "people": [people.public(p) for p in every] if me.get("admin") else [people.public(me)]}
-
-
-def _password(body: dict) -> str:
-    pw = str(body.get("password", ""))
-    if len(pw) < 4:
-        raise HTTPException(400, "password")
-    return pw
 
 
 @app.post("/api/people")
 async def add_person(request: Request):
-    """The first person is whoever sets it up, with everything that's here; after that, only they add people."""
+    """The first person is whoever sets it up, with everything that's here; after that, the first
+    invites the others by email."""
     body = await _body(request)
     first = not people.load()
-    if not first and not _person(request).get("admin"):
-        raise HTTPException(403, "admin")
-    name = str(body.get("name", "")).strip()
-    if not name or len(name) > 40:
-        raise HTTPException(400, "name")
-    if people.named(name):
-        raise HTTPException(400, "taken")
-    pw = _password(body)
-    p = await asyncio.to_thread(people.add, name, pw, config.home(), first or bool(body.get("stories", True)))
-    r = JSONResponse({"person": people.public(p)})
-    return _sign_in(request, r, p) if first else r
+    me = None if first else _admin(request)
+    stories = first or bool(body.get("stories", True))
+    p = await _do(people.add, str(body.get("name", "")), str(body.get("email", "")), config.home(), stories,
+                  str(body.get("password") or "") or None)
+    if first:
+        return _sign_in(request, JSONResponse({"person": people.public(p), "invited": False}), p)
+    invited = await _do(people.invite, p, me, stories)
+    return {"person": people.public(p), "invited": invited}
 
 
 @app.patch("/api/people/{pid}")
 async def edit_person(pid: int, request: Request):
+    """A name or an email: your own, or anyone's for the first person."""
     me = _person(request)
     if not me or (me["id"] != pid and not me.get("admin")):
         raise HTTPException(403, "admin")
-    if not people.get(pid):
-        raise HTTPException(404, "not found")
-    p = await asyncio.to_thread(people.set_password, pid, _password(await _body(request)))
-    r = JSONResponse({"ok": True})
-    return _sign_in(request, r, p) if pid == me["id"] else r
+    body = await _body(request)
+    p = await _do(people.edit, pid, name=body.get("name"), email=body.get("email"))
+    return people.public(p)
+
+
+@app.post("/api/people/{pid}/invite")
+async def invite_again(pid: int, request: Request):
+    me = _admin(request)
+    p = people.get(pid)
+    if not p or not p.get("email"):
+        raise HTTPException(404, "not-found")
+    if not await _do(people.invite, p, me):
+        raise HTTPException(502, "mail")
+    return {"invited": True}
 
 
 @app.delete("/api/people/{pid}")
 def remove_person(pid: int, request: Request):
-    me = _person(request)
-    if not me or not me.get("admin") or me["id"] == pid:
+    me = _admin(request)
+    if me["id"] == pid:
         raise HTTPException(403, "admin")
     if not people.get(pid):
-        raise HTTPException(404, "not found")
+        raise HTTPException(404, "not-found")
     people.remove(pid)
+    return {"ok": True}
+
+
+@app.put("/api/me/password")
+async def my_password(request: Request):
+    """Your own password, which signs you out everywhere else."""
+    me = _person(request)
+    if not me:
+        raise HTTPException(403, "admin")
+    body = await _body(request)
+    p = await _do(people.set_password, me["id"], str(body.get("password", "")), body.get("current"))
+    return _sign_in(request, JSONResponse({"ok": True}), p)
+
+
+@app.delete("/api/me/password")
+async def my_password_off(request: Request):
+    me = _person(request)
+    if not me:
+        raise HTTPException(403, "admin")
+    body = await _body(request)
+    await _do(people.remove_password, me["id"], body.get("current"))
     return {"ok": True}
 
 

@@ -9,6 +9,8 @@ DATA = Path(os.environ.get("BAMAH_DATA", "./data")).resolve()
 PASSWORD = os.environ.get("BAMAH_PASSWORD", "")      # empty: no sign-in (a copy on your own computer)
 PORT = int(os.environ.get("BAMAH_PORT", "8465"))     # the port the browser opens; ChatGPT's sign-in returns to it
 NAME = os.environ.get("BAMAH_NAME", "Bamah")
+URL = (os.environ.get("BAMAH_URL") or f"http://127.0.0.1:{PORT}").rstrip("/")   # its address, for the emails
+SIGNATURE = os.environ.get("BAMAH_SIGNATURE", "")    # who the invites are signed by; empty: whoever invites
 
 
 # The folder of whoever is signed in (people.py), set for each request; until there are people, the data folder itself.

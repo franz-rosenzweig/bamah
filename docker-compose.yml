@@ -19,6 +19,9 @@ services:
       BAMAH_PASSWORD: ${BAMAH_PASSWORD:-}
       BAMAH_PORT: ${BAMAH_PORT:-8465}
       BAMAH_NAME: ${BAMAH_NAME:-Bamah}
+      BAMAH_URL: ${BAMAH_URL:-}                # its address, for the links in invites
+      BAMAH_SIGNATURE: ${BAMAH_SIGNATURE:-}    # who invites are signed by
+      BAMAH_MAIL: ${BAMAH_MAIL:-}              # where mail settings are, if not mail.json in the data folder
       TZ: ${TZ:-UTC}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # reach Ollama running on the same machine

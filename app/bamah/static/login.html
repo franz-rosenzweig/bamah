@@ -18,26 +18,92 @@
   <form id="f">
     <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10a8 8 0 0 1 16 0v10M4 20h16M9 20v-6a3 3 0 0 1 6 0v6"/></svg></div>
     <div class="brand">Bamah</div>
-    <input id="name" class="hidden" placeholder="Name" aria-label="Name" autocomplete="username" autocapitalize="words">
-    <input type="password" id="pw" placeholder="Password" aria-label="Password" autocomplete="current-password" autofocus>
+    <input id="who" class="hidden" placeholder="Name or email" aria-label="Name or email" autocomplete="username" autocapitalize="none" spellcheck="false">
+    <input type="password" id="pw" placeholder="Password" aria-label="Password" autocomplete="current-password">
+    <button class="btn primary" type="submit" id="go">Sign in</button>
+    <button class="linkish hidden" type="button" id="mode">Use a password</button>
+    <div class="err" role="alert"></div>
+  </form>
+  <form id="back" class="hidden">
+    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10a8 8 0 0 1 16 0v10M4 20h16M9 20v-6a3 3 0 0 1 6 0v6"/></svg></div>
+    <div class="brand">Bamah</div>
+    <div class="to"><button class="icon" type="button" id="change" title="Back" aria-label="Back">←</button><span id="to"></span></div>
+    <input type="text" id="code" class="codein" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000 000" aria-label="Code">
     <button class="btn primary" type="submit">Sign in</button>
-    <div class="err" id="err" style="margin-top:10px"></div>
+    <button class="linkish" type="button" id="again">Send again</button>
+    <div class="err" role="alert"></div>
   </form>
 </div>
+<style>
+  .login .linkish { background: none; border: 0; color: var(--muted); font: 600 14px var(--ui, inherit); cursor: pointer; padding: 4px; }
+  .login .linkish:hover { color: var(--ink); }
+  .login .to { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; margin-top: -6px; }
+  .login .codein { font: 600 22px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .18em; text-align: center; }
+  .login input { width: 100%; }
+  .login .err { min-height: 1.2em; text-align: center; }
+</style>
 <script>
-const name = document.getElementById('name'), pw = document.getElementById('pw');
-let names = false;
-fetch('/api/login').then((r) => r.json()).then((d) => {
-  names = d.names;
-  if (names) { name.classList.remove('hidden'); name.focus(); }
-}).catch(() => {});
-document.getElementById('f').addEventListener('submit', async (e) => {
+(() => {
+const $ = (s) => document.querySelector(s);
+const SAY = {
+  'not-found': 'No one by that name or email', 'no-email': 'No email for this name. Use a password.',
+  throttled: 'Too many tries. Wait a bit.', locked: 'Too many tries. Use a code, or wait 15 minutes.',
+  login: 'Wrong name or password', mail: "Couldn't send the email", wrong: 'Wrong code', expired: 'Code expired',
+};
+let names = false, mail = false, usePw = true, who = '';
+try { $('#who').value = localStorage.getItem('bamah.who') || ''; usePw = localStorage.getItem('bamah.signin') === 'password'; } catch (e) {}
+
+function say(form, msg) { form.querySelector('.err').textContent = msg ? (SAY[msg] || 'Not signed in') : ''; }
+function only(id) { for (const f of ['#f', '#back']) $(f).classList.toggle('hidden', f !== id); }
+function mode(pw) {
+  usePw = pw || !mail;
+  $('#pw').classList.toggle('hidden', names && !usePw);
+  $('#go').textContent = names && !usePw ? 'Send code' : 'Sign in';
+  $('#mode').textContent = usePw ? 'Use a code' : 'Use a password';
+  $('#mode').classList.toggle('hidden', !names || !mail);
+  try { localStorage.setItem('bamah.signin', usePw ? 'password' : 'code'); } catch (e) {}
+}
+async function post(path, body) {
+  const r = await fetch(path, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)});
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || 'error');
+  return data;
+}
+async function sendCode(form) {
+  say(form, '');
+  try {
+    const r = await post('/api/login/code', {who});
+    $('#to').textContent = r.to;
+    only('#back'); say($('#back'), '');
+    $('#code').value = ''; $('#code').focus();
+  } catch (e) { say(form, e.message); }
+}
+
+$('#f').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const r = await fetch('/api/login', {method: 'POST', headers: {'content-type': 'application/json'},
-    body: JSON.stringify({name: name.value, password: pw.value})});
-  if (r.ok) location.href = '/';
-  else document.getElementById('err').textContent = names ? 'Wrong name or password' : 'Wrong password';
+  who = $('#who').value.trim();
+  try { localStorage.setItem('bamah.who', who); } catch (x) {}
+  if (names && !usePw) return sendCode($('#f'));
+  say($('#f'), '');
+  try { await post('/api/login', {name: who, password: $('#pw').value}); location.href = '/'; }
+  catch (x) { say($('#f'), names ? x.message : 'login'); if (!names) $('#f .err').textContent = 'Wrong password'; $('#pw').select(); }
 });
+$('#mode').addEventListener('click', () => { mode(!usePw); say($('#f'), ''); (usePw && $('#who').value ? $('#pw') : $('#who')).focus(); });
+$('#again').addEventListener('click', () => sendCode($('#back')));
+$('#change').addEventListener('click', () => { only('#f'); $('#who').focus(); });
+$('#back').addEventListener('submit', async (e) => {
+  e.preventDefault(); say($('#back'), '');
+  try { await post('/api/login/verify', {who, code: $('#code').value}); location.href = '/'; }
+  catch (x) { say($('#back'), x.message); $('#code').select(); }
+});
+
+fetch('/api/login').then((r) => r.json()).then((d) => {
+  names = d.names; mail = d.mail;
+  $('#who').classList.toggle('hidden', !names);
+  mode(usePw);
+  (names && !$('#who').value ? $('#who') : $('#pw').classList.contains('hidden') ? $('#who') : $('#pw')).focus();
+}).catch(() => $('#pw').focus());
+})();
 </script>
 </body>
 </html>

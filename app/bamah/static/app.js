@@ -1753,57 +1753,94 @@ async function settingsView() {
 }
 
 // Each person has their own stories, characters and connections. The first is whoever sets it up,
-// keeping everything that's here; after that, only they add people.
+// keeping everything that's here; after that, they invite the others by email.
 async function peopleGroup(reload) {
   const P = await GET('/api/people');
   const g = h('div', {class: 'group'});
   if (!P.on) {
-    g.append(h('div', {class: 'rowline'}, h('button', {class: 'btn small', onclick: () => personSheet(true, reload)}, icon('plus'), 'My profile')));
+    g.append(h('div', {class: 'rowline'}, h('button', {class: 'btn small', onclick: () => personSheet(P, true, reload)}, icon('plus'), 'My profile')));
     return g;
   }
   for (const p of P.people) {
     const me = p.id === P.me.id;
+    const sub = [me ? 'You' : null, p.email, !me && !p.joined ? 'Invited' : null].filter(Boolean).join(' · ');
     g.append(h('div', {class: 'rowline'},
-      h('div', {class: 'grow'}, h('div', {style: 'font-weight:600'}, p.name), me ? h('div', {class: 'small muted'}, 'You') : null),
-      h('button', {class: 'btn small', onclick: () => passwordSheet(p, reload)}, 'Password'),
-      !me && P.me.admin ? ibtn('trash', async () => { if (await ask(`Remove ${p.name}?`, 'Remove')) { await DEL(`/api/people/${p.id}`); reload(); } }, {title: 'Remove'}) : null));
+      h('div', {class: 'grow'}, h('div', {style: 'font-weight:600'}, p.name), sub ? h('div', {class: 'small muted'}, sub) : null),
+      !me && P.me.admin && !p.joined && p.email && P.mail ? h('button', {class: 'btn small', onclick: async () => {
+        try { await POST(`/api/people/${p.id}/invite`); toast('Sent'); } catch (x) { toast(PERSON_ERRORS[x.message] || 'Not sent'); }
+      }}, 'Invite again') : null,
+      me ? h('button', {class: 'btn small', onclick: () => passwordSheet(p, reload)}, 'Password') : null,
+      ibtn('edit', () => editPersonSheet(p, reload), {title: 'Edit'}),
+      !me ? ibtn('trash', async () => { if (await ask(`Remove ${p.name}?`, 'Remove')) { await DEL(`/api/people/${p.id}`); reload(); } }, {title: 'Remove'}) : null));
   }
-  if (P.me.admin) g.append(h('div', {class: 'rowline'}, h('button', {class: 'btn small', onclick: () => personSheet(false, reload)}, icon('plus'), 'Add')));
+  if (P.me.admin) g.append(h('div', {class: 'rowline'}, h('button', {class: 'btn small', onclick: () => personSheet(P, false, reload)}, icon('plus'), P.mail ? 'Invite' : 'Add')));
   return g;
 }
 
-const PERSON_ERRORS = {name: 'Name needed', taken: 'Name taken', password: 'Password too short'};
+const PERSON_ERRORS = {name: 'Name needed', taken: 'Name taken', email: 'Check the email', exists: 'Email already used',
+  short: 'At least 8 characters', long: 'Too long', current: 'Wrong password', throttled: 'Too many today', mail: "Couldn't send the email"};
 
-function personSheet(first, done) {
+function personButton(label, go) {
+  return h('button', {class: 'btn primary', onclick: async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;       // a copy and an email take a moment
+    try { await go(); } finally { b.disabled = false; }
+  }}, label);
+}
+
+function personSheet(P, first, done) {
   sheet((box, close) => {
     const name = h('input', {maxlength: 40, autocomplete: 'off'});
+    const email = h('input', {type: 'email', autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false'});
     const pw = h('input', {type: 'password', autocomplete: 'new-password'});
     const err = h('div', {class: 'err'});
     let stories = '1';
-    add(box, h('h2', {}, first ? 'My profile' : 'Add a person'),
-      field('Name', name), field('Password', pw),
+    add(box, h('h2', {}, first ? 'My profile' : P.mail ? 'Invite someone' : 'Add someone'),
+      field('Name', name), field('Email', email), first || !P.mail ? field('Password', pw) : null,
       first ? null : field('Stories', seg([['1', 'Copy mine'], ['0', 'None']], stories, (v) => { stories = v; })),
       err,
       h('div', {class: 'foot'}, h('button', {class: 'btn', onclick: close}, 'Cancel'),
-        h('button', {class: 'btn primary', onclick: async (e) => {
-          const b = e.currentTarget;
-          b.disabled = true;       // a copy takes a moment
-          try { await POST('/api/people', {name: name.value, password: pw.value, stories: stories === '1'}); close(); done(); }
-          catch (x) { err.textContent = PERSON_ERRORS[x.message] || 'Not saved'; b.disabled = false; }
-        }}, first ? 'Save' : 'Add')));
+        personButton(first ? 'Save' : P.mail ? 'Invite' : 'Add', async () => {
+          try {
+            const r = await POST('/api/people', {name: name.value, email: email.value, password: pw.value || null, stories: stories === '1'});
+            close();
+            if (!first && P.mail) toast(r.invited ? 'Invited' : "Added. The email didn't go out.");
+            done();
+          } catch (x) { err.textContent = PERSON_ERRORS[x.message] || 'Not saved'; }
+        })));
+  });
+}
+
+function editPersonSheet(p, done) {
+  sheet((box, close) => {
+    const name = h('input', {maxlength: 40, value: p.name});
+    const email = h('input', {type: 'email', value: p.email || '', autocapitalize: 'none', spellcheck: 'false'});
+    const err = h('div', {class: 'err'});
+    add(box, h('h2', {}, p.name), field('Name', name), field('Email', email), err,
+      h('div', {class: 'foot'}, h('button', {class: 'btn', onclick: close}, 'Cancel'),
+        personButton('Save', async () => {
+          try { await PATCH(`/api/people/${p.id}`, {name: name.value, email: email.value}); close(); done(); }
+          catch (x) { err.textContent = PERSON_ERRORS[x.message] || 'Not saved'; }
+        })));
   });
 }
 
 function passwordSheet(p, done) {
   sheet((box, close) => {
+    const current = h('input', {type: 'password', autocomplete: 'current-password'});
     const pw = h('input', {type: 'password', autocomplete: 'new-password'});
     const err = h('div', {class: 'err'});
-    add(box, h('h2', {}, p.name), field('New password', pw), err,
-      h('div', {class: 'foot'}, h('button', {class: 'btn', onclick: close}, 'Cancel'),
-        h('button', {class: 'btn primary', onclick: async () => {
-          try { await PATCH(`/api/people/${p.id}`, {password: pw.value}); close(); toast('Saved'); done(); }
-          catch (x) { err.textContent = PERSON_ERRORS[x.message] || 'Not saved'; }
-        }}, 'Save')));
+    const fail = (x) => { err.textContent = PERSON_ERRORS[x.message] || 'Not saved'; };
+    add(box, h('h2', {}, 'Password'),
+      p.password ? field('Current password', current) : null, field('New password', pw), err,
+      h('div', {class: 'foot'},
+        p.password && p.email ? h('button', {class: 'btn', onclick: async () => {
+          try { await api('DELETE', '/api/me/password', {current: current.value}); close(); toast('Removed'); done(); } catch (x) { fail(x); }
+        }}, 'Remove') : null,
+        h('button', {class: 'btn', onclick: close}, 'Cancel'),
+        personButton('Save', async () => {
+          try { await PUT('/api/me/password', {password: pw.value, current: current.value}); close(); toast('Saved'); done(); } catch (x) { fail(x); }
+        })));
   });
 }
 

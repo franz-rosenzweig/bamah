@@ -20,11 +20,13 @@
 
 ## People
 
-At first, Bamah has one password, the one set on the server, and everyone who signs in shares the same stories. To give each person their own, choose **My profile** under **People**, then type your name and a password. You keep everything that's there, and from then on you sign in with your name and password.
+At first, Bamah has one password, the one set on the server, and everyone who signs in shares the same stories. To give each person their own, choose **My profile** under **People** and type your name and your email (or a password, on a server that can't send email). You keep everything that's there, and from then on you sign in as yourself.
 
-Then choose **Add** to make someone else a profile. Under **Stories**, **Copy mine** starts them with a copy of everything of yours: stories, characters, journals, portraits and models. **None** starts them with only your models, your settings and the portrait library. From then on, what each of you does stays on your own: a scene you play, a character you change or a model you add doesn't touch the other's.
+Then choose **Invite** to bring someone else in: their name and their email. Under **Stories**, **Copy mine** starts them with a copy of everything of yours: stories, characters, journals, portraits and models. **None** starts them with only your models, your settings and the portrait library. They get an email saying they're in, with a button that opens Bamah. From then on, what each of you does stays on your own: a scene you play, a character you change or a model you add doesn't touch the other's.
 
-Everyone can change their own **Password**. Only the first person sees everyone's, can add people, and can **Remove** someone. Removing someone signs them out and puts their stories aside on the server rather than deleting them. A new password signs that person out everywhere else.
+**Signing in** takes your name or your email, then a 6-digit code that comes by email and works for 10 minutes. If you'd rather have a password, set one with **Password** next to your name, and choose **Use a password** on the sign-in page. A new password signs you out everywhere else, and **Remove** goes back to codes alone.
+
+The pencil changes a name or an email: your own, and anyone's for the first person. Only the first person sees everyone, invites people, sends an invite again to someone who hasn't signed in yet, and can **Remove** someone. Removing someone signs them out and puts their stories aside on the server rather than deleting them.
 
 ## Themes
 

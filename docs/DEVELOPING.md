@@ -17,6 +17,9 @@ docker compose up -d --build      # then open http://127.0.0.1:8465
 | `BAMAH_PORT` | the port it answers on (127.0.0.1 only). ChatGPT's sign-in comes back to this port. |
 | `DATA_DIR` | the folder for the database, the portraits and the ChatGPT sign-in. |
 | `BAMAH_NAME`, `TZ` | what it calls itself, and the time zone. |
+| `BAMAH_URL`, `BAMAH_SIGNATURE` | for invites by email: the address people open it at, and who the invites are signed by. |
+
+Invites and sign-in codes go out through an SMTP server, set in `mail.json` in the data folder (600, never in git): `{"host": "...", "port": 25, "user": "...", "pass": "...", "from": "Bamah <you@example.com>"}`. Proton Mail Bridge works: put Bamah on Bridge's network in `docker-compose.override.yml` and use Bridge's container name as the host. Without it, people sign in with passwords. `docker exec bamah python -m bamah.people list` shows who's there.
 
 Anything that only fits one server, like another address to listen on, goes in `docker-compose.override.yml`, which git ignores. On a server, put Bamah behind HTTPS (a reverse proxy or a tunnel) and set a password.
 
@@ -27,7 +30,7 @@ Ollama on the same computer is reached at `host.docker.internal:11434`.
 - `app/bamah/web.py`: the server (FastAPI) and every route.
 - `app/bamah/engine.py`: the scenes: what a character is told, who speaks, memory and feelings. See [How it works](how-it-works.md).
 - `app/bamah/models.py`: talking to the models, in the OpenAI format, through the Anthropic SDK for Claude, and through the ChatGPT plan (`chatgpt.py`).
-- `app/bamah/people.py`: the people who sign in. Each has a folder under `people/` in the data folder, with their own database, portraits and backgrounds; `config.path()` points at the folder of whoever the request is from. The pictures in a copy are linked, not copied, since a picture is only ever added or deleted.
+- `app/bamah/people.py`: the people who sign in, by a code by email (`mail.py`, `emails.py`) or a password. Each has a folder under `people/` in the data folder, with their own database, portraits and backgrounds; `config.path()` points at the folder of whoever the request is from. The pictures in a copy are linked, not copied, since a picture is only ever added or deleted.
 - `app/bamah/images.py`: portraits. `docs.py`: reading Word, PDF and text files. `db.py`: the database and its migrations.
 - `app/bamah/static/`: the page, in plain HTML, CSS and JavaScript, with no build step. The fonts (Inter and Literata, both under the SIL Open Font License) are served from `static/fonts/`.
 - `app/bamah/extras/`, if there is one: add-ons for one server only. Git ignores it, and the app runs the same without it.
