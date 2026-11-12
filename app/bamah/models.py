@@ -35,7 +35,7 @@ PRESETS = {
 CLAUDE_FALLBACK = ("claude-opus", "claude-sonnet", "claude-fable")
 
 _transport = None          # tests swap in an httpx.MockTransport
-_model_lists: dict[int, tuple[float, list]] = {}
+_model_lists: dict[tuple, tuple[float, list]] = {}   # (whose, connection, kind)
 
 # Services that play one character themselves rather than take a prompt: preset → async generator.
 TURNS: dict = {}
@@ -298,7 +298,7 @@ DRAWS_NOT = ("anthropic", "chatgpt")     # connections that can't make pictures 
 
 async def available(conn_id: int, fresh: bool = False, kind: str = "text") -> list[dict]:
     """[{"id", "name"}] for the model picker, kept for an hour. kind "image": the ones that make pictures."""
-    hit = _model_lists.get((conn_id, kind))
+    hit = _model_lists.get((config.home(), conn_id, kind))
     if hit and not fresh and time.time() - hit[0] < 3600:
         return hit[1]
     conn = connection(conn_id)
@@ -307,7 +307,7 @@ async def available(conn_id: int, fresh: bool = False, kind: str = "text") -> li
         return []
     if kind == "image":
         out = await _image_models(conn, conn_id, fresh)
-        _model_lists[(conn_id, kind)] = (time.time(), out)
+        _model_lists[(config.home(), conn_id, kind)] = (time.time(), out)
         return out
     if conn["preset"] == "anthropic":
         import anthropic
@@ -349,7 +349,7 @@ async def available(conn_id: int, fresh: bool = False, kind: str = "text") -> li
                 entry["reasoning"] = m.get("reasoning") or ({} if thinks else None)
             out.append(entry)
         out.sort(key=lambda m: m["id"])
-    _model_lists[(conn_id, kind)] = (time.time(), out)
+    _model_lists[(config.home(), conn_id, kind)] = (time.time(), out)
     return out
 
 
@@ -381,7 +381,7 @@ async def _image_models(conn, conn_id: int, fresh: bool) -> list[dict]:
 
 def forget(conn_id: int):
     for kind in ("text", "image"):
-        _model_lists.pop((conn_id, kind), None)
+        _model_lists.pop((config.home(), conn_id, kind), None)
 
 
 # Private add-ons that live only on one server (git ignores bamah/extras). They register their own

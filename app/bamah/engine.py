@@ -18,7 +18,7 @@ import json
 import logging
 import re
 
-from . import db, models
+from . import config, db, models
 from .models import ModelError
 
 log = logging.getLogger("bamah.engine")
@@ -79,6 +79,7 @@ _reasons: dict[tuple, str] = {}          # (scene, character): why the turn orde
 
 
 def _lock(*key) -> asyncio.Lock:
+    key = (config.home(), *key)       # each person's scene 1 is their own
     if key not in _locks:
         _locks[key] = asyncio.Lock()
     return _locks[key]
@@ -648,7 +649,7 @@ async def turn(scene_id: int, cid: int, *, model: str | None = None, redo: int |
                 "insert into event(scene_id, seq, kind, character_id, content, inner, versions, model, witnesses, recalled, reason) "
                 "values (?, ?, 'character', ?, ?, ?, ?, ?, ?, ?, ?)",
                 (scene_id, seq, cid, text, inner, json.dumps([take]), ref, json.dumps(p["here"]), json.dumps(p["recalled"]),
-                 _reasons.pop((scene_id, cid), "")))
+                 _reasons.pop((config.home(), scene_id, cid), "")))
             eid = cur.lastrowid
         ev = event_out(d, eid)
     yield ("done", ev)
@@ -720,7 +721,7 @@ async def pick(scene_id: int, *, more: bool = False) -> list[int]:
     is kept for the line they write next."""
     order = await _pick(scene_id, more=more)
     for cid, why in order:
-        _reasons[(scene_id, cid)] = why
+        _reasons[(config.home(), scene_id, cid)] = why
     return [cid for cid, _ in order]
 
 

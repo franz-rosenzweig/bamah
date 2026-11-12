@@ -15,7 +15,16 @@
   - **Repetition guard:** notices when a character keeps reaching for the same phrases, and asks them for fresh ones.
 - **Reading:** **Text size**; **Theme**, **Dark**, **Light**, or **Auto** to follow the device, and under it every theme, each with a little picture of how it looks; and **Tour**, which starts the guided tour again. These are kept per device, so a phone and a computer can differ.
 - **Shared journal:** notes for every story, that come to mind when one of their keyphrases comes up.
+- **People:** who signs in, each with stories of their own. See [People](#people) below.
 - **Data:** **Backup** downloads everything as one file, and **Sign out**.
+
+## People
+
+At first, Bamah has one password, the one set on the server, and everyone who signs in shares the same stories. To give each person their own, choose **My profile** under **People**, then type your name and a password. You keep everything that's there, and from then on you sign in with your name and password.
+
+Then choose **Add** to make someone else a profile. Under **Stories**, **Copy mine** starts them with a copy of everything of yours: stories, characters, journals, portraits and models. **None** starts them with only your models, your settings and the portrait library. From then on, what each of you does stays on your own: a scene you play, a character you change or a model you add doesn't touch the other's.
+
+Everyone can change their own **Password**. Only the first person sees everyone's, can add people, and can **Remove** someone. Removing someone signs them out and puts their stories aside on the server rather than deleting them. A new password signs that person out everywhere else.
 
 ## Themes
 

@@ -225,8 +225,10 @@ COLUMNS = [
 DEFAULTS = {"short_term": "60000", "recall": "6", "feelings": "1", "round": "3", "repetition": "1", "thinking": "low"}
 
 
-def connect() -> sqlite3.Connection:
-    db = sqlite3.connect(config.path("bamah.db"), timeout=30, isolation_level=None, check_same_thread=False)
+def connect(home=None) -> sqlite3.Connection:
+    """The database of the person signed in, or of the folder given."""
+    f = home / "bamah.db" if home else config.path("bamah.db")
+    db = sqlite3.connect(f, timeout=30, isolation_level=None, check_same_thread=False)
     db.row_factory = sqlite3.Row
     db.execute("pragma foreign_keys = on")
     db.execute("pragma journal_mode = wal")
@@ -234,8 +236,8 @@ def connect() -> sqlite3.Connection:
     return db
 
 
-def init():
-    with connect() as db:
+def init(home=None):
+    with connect(home) as db:
         db.executescript(SCHEMA)
         for table, column, decl in COLUMNS:
             have = {r["name"] for r in db.execute(f"pragma table_info({table})")}

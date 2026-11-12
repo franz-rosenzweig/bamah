@@ -45,6 +45,7 @@ The AI companion apps are good at one character at a time, but they're expensive
 - **Bring in your pages:** drop in a chapter, an outline or a backstory (Word, PDF or text), into a scene where everyone there reads it, onto one character, or into the story's journal.
 - **Ideas:** star a moment and add a note, and it goes on the Ideas list. A story exports to Markdown.
 - **Easy on the eyes:** 22 themes, each dark or light, from plain colours to rooms like a velvet theatre, a candlelit study or a starship, and a picture of your own behind any scene. The text size is per device, for long reading sessions, and it works on a phone or a tablet too.
+- **People:** each person who signs in has their own stories, characters and models, so two writers can share one Bamah. The first can start the next with a copy of everything. See [People](docs/settings.md#people).
 - **Mac and Windows apps:** the same Bamah in a window of its own, with a menu bar, a key for everything you do in a scene, files dropped straight in, and a ping when a reply comes in while you're elsewhere. See [The Mac and Windows apps](docs/apps.md).
 - **Any model:** OpenRouter (hundreds of models), OpenAI, Claude, Gemini, Ollama on your own computer, anything else that speaks the OpenAI format, or your own ChatGPT plan through "Sign in with ChatGPT". Each story and each character can use a different one, and on OpenRouter you choose how much they think before they answer. See [Models](docs/models.md).
 

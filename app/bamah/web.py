@@ -1,5 +1,6 @@
 """The web app: a JSON API for the page, and the page itself."""
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -12,7 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 
-from . import chatgpt, config, db, docs, engine, images, models
+from . import chatgpt, config, db, docs, engine, images, models, people
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("bamah.web")
@@ -25,6 +26,8 @@ OPEN = ("/login", "/api/login", "/static/app.css", "/static/themes.js", "/static
 @asynccontextmanager
 async def _life(_app):
     db.init()
+    for p in people.load():
+        db.init(people.folder(p["id"]))
     yield
 
 
@@ -32,27 +35,63 @@ app = FastAPI(title=config.NAME, docs_url=None, redoc_url=None, openapi_url=None
 
 
 # --- Signing in -------------------------------------------------------------------------------
+# Before there are people (people.py) there's one password, BAMAH_PASSWORD, or none at all on your own
+# computer. Once there are, each signs in with their name and password, and every request reads and
+# writes their folder alone.
 
 def _sign(value: str) -> str:
     return hmac.new(config.secret(), value.encode(), hashlib.sha256).hexdigest()
 
 
+def _cookie(request: Request) -> str | None:
+    value, _, mac = request.cookies.get(COOKIE, "").rpartition(".")
+    return value if value and hmac.compare_digest(_sign(value), mac) else None
+
+
+def _person(request: Request) -> dict | None:
+    """Who the cookie says is signed in: p<id>-<gen>-…, and gen goes up when their password changes."""
+    value = _cookie(request) or ""
+    if not value.startswith("p"):
+        return None
+    try:
+        pid, gen, _ = value[1:].split("-", 2)
+        p = people.get(int(pid))
+    except ValueError:
+        return None
+    return p if p and str(p.get("gen", 0)) == gen else None
+
+
 def _signed_in(request: Request) -> bool:
-    if not config.PASSWORD:
-        return True
-    raw = request.cookies.get(COOKIE, "")
-    value, _, mac = raw.rpartition(".")
-    return bool(value) and hmac.compare_digest(_sign(value), mac)
+    return not config.PASSWORD or _cookie(request) is not None
 
 
 @app.middleware("http")
 async def _gate(request: Request, call_next):
     path = request.url.path
-    if config.PASSWORD and not path.startswith(OPEN) and not _signed_in(request):
-        if path.startswith("/api/"):
-            return JSONResponse({"error": "signin"}, status_code=401)
-        return RedirectResponse("/login")
+    if people.load():
+        p = _person(request)
+        if p:
+            config.HOME.set(people.folder(p["id"]))
+        elif not path.startswith(OPEN):
+            return _out(path)
+    elif config.PASSWORD and not path.startswith(OPEN) and not _signed_in(request):
+        return _out(path)
     return await call_next(request)
+
+
+def _out(path: str):
+    if path.startswith("/api/"):
+        return JSONResponse({"error": "signin"}, status_code=401)
+    return RedirectResponse("/login")
+
+
+def _sign_in(request: Request, r: JSONResponse, person: dict | None = None) -> JSONResponse:
+    value = f"{int(time.time())}-{secrets.token_hex(8)}"
+    if person:
+        value = f"p{person['id']}-{person.get('gen', 0)}-{value}"
+    r.set_cookie(COOKIE, f"{value}.{_sign(value)}", max_age=60 * 60 * 24 * 400, httponly=True, samesite="lax",
+                 secure=request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https")
+    return r
 
 
 @app.get("/login")
@@ -60,17 +99,23 @@ def login_page():
     return FileResponse(STATIC / "login.html")
 
 
+@app.get("/api/login")
+def login_form():
+    return {"names": bool(people.load())}
+
+
 @app.post("/api/login")
 async def login(request: Request):
-    body = await request.json()
-    if not config.PASSWORD or not hmac.compare_digest(str(body.get("password", "")).encode(), config.PASSWORD.encode()):
-        time.sleep(1)
-        raise HTTPException(403, "wrong")
-    value = f"{int(time.time())}-{secrets.token_hex(8)}"
-    r = JSONResponse({"ok": True})
-    r.set_cookie(COOKIE, f"{value}.{_sign(value)}", max_age=60 * 60 * 24 * 400, httponly=True, samesite="lax",
-                 secure=request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https")
-    return r
+    body = await _body(request)
+    password = str(body.get("password", ""))
+    if people.load():
+        p = people.named(str(body.get("name", "")))
+        if p and await asyncio.to_thread(people.check, p, password):
+            return _sign_in(request, JSONResponse({"ok": True}), p)
+    elif config.PASSWORD and hmac.compare_digest(password.encode(), config.PASSWORD.encode()):
+        return _sign_in(request, JSONResponse({"ok": True}))
+    await asyncio.sleep(1)
+    raise HTTPException(403, "wrong")
 
 
 @app.post("/api/logout")
@@ -78,6 +123,66 @@ def logout():
     r = JSONResponse({"ok": True})
     r.delete_cookie(COOKIE)
     return r
+
+
+# --- People -----------------------------------------------------------------------------------
+
+@app.get("/api/people")
+def people_list(request: Request):
+    every = people.load()
+    if not every:
+        return {"on": False, "me": None, "people": []}
+    me = _person(request)
+    return {"on": True, "me": people.public(me),
+            "people": [people.public(p) for p in every] if me.get("admin") else [people.public(me)]}
+
+
+def _password(body: dict) -> str:
+    pw = str(body.get("password", ""))
+    if len(pw) < 4:
+        raise HTTPException(400, "password")
+    return pw
+
+
+@app.post("/api/people")
+async def add_person(request: Request):
+    """The first person is whoever sets it up, with everything that's here; after that, only they add people."""
+    body = await _body(request)
+    first = not people.load()
+    if not first and not _person(request).get("admin"):
+        raise HTTPException(403, "admin")
+    name = str(body.get("name", "")).strip()
+    if not name or len(name) > 40:
+        raise HTTPException(400, "name")
+    if people.named(name):
+        raise HTTPException(400, "taken")
+    pw = _password(body)
+    p = await asyncio.to_thread(people.add, name, pw, config.home(), first or bool(body.get("stories", True)))
+    r = JSONResponse({"person": people.public(p)})
+    return _sign_in(request, r, p) if first else r
+
+
+@app.patch("/api/people/{pid}")
+async def edit_person(pid: int, request: Request):
+    me = _person(request)
+    if not me or (me["id"] != pid and not me.get("admin")):
+        raise HTTPException(403, "admin")
+    if not people.get(pid):
+        raise HTTPException(404, "not found")
+    p = await asyncio.to_thread(people.set_password, pid, _password(await _body(request)))
+    r = JSONResponse({"ok": True})
+    return _sign_in(request, r, p) if pid == me["id"] else r
+
+
+@app.delete("/api/people/{pid}")
+def remove_person(pid: int, request: Request):
+    me = _person(request)
+    if not me or not me.get("admin") or me["id"] == pid:
+        raise HTTPException(403, "admin")
+    if not people.get(pid):
+        raise HTTPException(404, "not found")
+    people.remove(pid)
+    return {"ok": True}
 
 
 # --- Helpers ----------------------------------------------------------------------------------
@@ -962,7 +1067,7 @@ def get_settings():
         labels = {k: models.label(vals[k]) for k in ("default_model", "helper_model", "portrait_model")}
     return {"connections": conns, "settings": vals, "labels": labels, "chatgpt": chatgpt.status(),
             "presets": {k: {**p, "draws": k not in models.DRAWS_NOT and k not in models.TURNS} for k, p in models.PRESETS.items()},
-            "port": config.PORT, "name": config.NAME, "signin": bool(config.PASSWORD)}
+            "port": config.PORT, "name": config.NAME, "signin": bool(config.PASSWORD or people.load())}
 
 
 @app.put("/api/settings")

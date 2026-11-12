@@ -1745,9 +1745,66 @@ async function settingsView() {
   const gj = await GET('/api/journal');
   wrap.append(journalEditor(gj, {}, reload));
 
+  wrap.append(h('h3', {}, 'People'), await peopleGroup(reload));
+
   wrap.append(h('h3', {}, 'Data'), h('div', {class: 'row wrap'},
     h('a', {class: 'btn', href: '/api/backup', download: ''}, 'Backup'),
     s.signin ? h('button', {class: 'btn', onclick: async () => { await POST('/api/logout'); location.href = '/login'; }}, 'Sign out') : null));
+}
+
+// Each person has their own stories, characters and connections. The first is whoever sets it up,
+// keeping everything that's here; after that, only they add people.
+async function peopleGroup(reload) {
+  const P = await GET('/api/people');
+  const g = h('div', {class: 'group'});
+  if (!P.on) {
+    g.append(h('div', {class: 'rowline'}, h('button', {class: 'btn small', onclick: () => personSheet(true, reload)}, icon('plus'), 'My profile')));
+    return g;
+  }
+  for (const p of P.people) {
+    const me = p.id === P.me.id;
+    g.append(h('div', {class: 'rowline'},
+      h('div', {class: 'grow'}, h('div', {style: 'font-weight:600'}, p.name), me ? h('div', {class: 'small muted'}, 'You') : null),
+      h('button', {class: 'btn small', onclick: () => passwordSheet(p, reload)}, 'Password'),
+      !me && P.me.admin ? ibtn('trash', async () => { if (await ask(`Remove ${p.name}?`, 'Remove')) { await DEL(`/api/people/${p.id}`); reload(); } }, {title: 'Remove'}) : null));
+  }
+  if (P.me.admin) g.append(h('div', {class: 'rowline'}, h('button', {class: 'btn small', onclick: () => personSheet(false, reload)}, icon('plus'), 'Add')));
+  return g;
+}
+
+const PERSON_ERRORS = {name: 'Name needed', taken: 'Name taken', password: 'Password too short'};
+
+function personSheet(first, done) {
+  sheet((box, close) => {
+    const name = h('input', {maxlength: 40, autocomplete: 'off'});
+    const pw = h('input', {type: 'password', autocomplete: 'new-password'});
+    const err = h('div', {class: 'err'});
+    let stories = '1';
+    add(box, h('h2', {}, first ? 'My profile' : 'Add a person'),
+      field('Name', name), field('Password', pw),
+      first ? null : field('Stories', seg([['1', 'Copy mine'], ['0', 'None']], stories, (v) => { stories = v; })),
+      err,
+      h('div', {class: 'foot'}, h('button', {class: 'btn', onclick: close}, 'Cancel'),
+        h('button', {class: 'btn primary', onclick: async (e) => {
+          const b = e.currentTarget;
+          b.disabled = true;       // a copy takes a moment
+          try { await POST('/api/people', {name: name.value, password: pw.value, stories: stories === '1'}); close(); done(); }
+          catch (x) { err.textContent = PERSON_ERRORS[x.message] || 'Not saved'; b.disabled = false; }
+        }}, first ? 'Save' : 'Add')));
+  });
+}
+
+function passwordSheet(p, done) {
+  sheet((box, close) => {
+    const pw = h('input', {type: 'password', autocomplete: 'new-password'});
+    const err = h('div', {class: 'err'});
+    add(box, h('h2', {}, p.name), field('New password', pw), err,
+      h('div', {class: 'foot'}, h('button', {class: 'btn', onclick: close}, 'Cancel'),
+        h('button', {class: 'btn primary', onclick: async () => {
+          try { await PATCH(`/api/people/${p.id}`, {password: pw.value}); close(); toast('Saved'); done(); }
+          catch (x) { err.textContent = PERSON_ERRORS[x.message] || 'Not saved'; }
+        }}, 'Save')));
+  });
 }
 
 function connectionSheet(s, c, done) {
